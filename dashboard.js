@@ -12,12 +12,25 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     const promptBox = document.getElementById('prompt_box');
+    const apiKeyInput = document.getElementById('openai_key');
+    const saveApiKeyButton = document.getElementById('btn_save_key');
     let FOUND_COMS = [];
     let RADAR_OPPS = [];
 
     chrome.storage.local.get(['persona'], r => {
         if (promptBox) promptBox.value = r.persona || "Expert.";
     });
+    chrome.storage.local.get(['openaiApiKey'], r => {
+        if (apiKeyInput) apiKeyInput.value = r.openaiApiKey || "";
+    });
+    if (saveApiKeyButton && apiKeyInput) {
+        saveApiKeyButton.addEventListener('click', () => {
+            const nextKey = apiKeyInput.value.trim();
+            chrome.storage.local.set({ openaiApiKey: nextKey }, () => {
+                alert(nextKey ? "Clé API sauvegardée." : "Clé API supprimée.");
+            });
+        });
+    }
 
     function nav(key, url, cb) {
         chrome.tabs.query({active:true, currentWindow:true}, async t => {

@@ -1,4 +1,5 @@
-const API_KEY = "";
+const API_KEY_STORAGE_KEY = "openaiApiKey";
+let cachedApiKey = "";
 const QUEUE_ALARM = "ghostly-post-queue";
 
 const getQueue = () => new Promise(resolve => {
@@ -9,13 +10,25 @@ const setQueue = (queue) => new Promise(resolve => {
     chrome.storage.local.set({ postQueue: queue }, resolve);
 });
 
+const getApiKey = () => new Promise(resolve => {
+    if (cachedApiKey) {
+        resolve(cachedApiKey);
+        return;
+    }
+    chrome.storage.local.get([API_KEY_STORAGE_KEY], r => {
+        cachedApiKey = (r[API_KEY_STORAGE_KEY] || "").trim();
+        resolve(cachedApiKey);
+    });
+});
+
 const fetchOpenAI = async (payload) => {
-    if (!API_KEY) {
+    const apiKey = await getApiKey();
+    if (!apiKey) {
         return { ok: false, data: null, error: "OpenAI API key missing" };
     }
     const r = await fetch("https://api.openai.com/v1/chat/completions", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${API_KEY}` },
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
         body: JSON.stringify(payload)
     });
     let data = null;
@@ -197,6 +210,12 @@ chrome.runtime.onInstalled.addListener(() => {
 
 chrome.runtime.onStartup.addListener(() => {
     scheduleNextPost();
+});
+
+chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === "local" && changes[API_KEY_STORAGE_KEY]) {
+        cachedApiKey = (changes[API_KEY_STORAGE_KEY].newValue || "").trim();
+    }
 });
 
 chrome.alarms.onAlarm.addListener((alarm) => {
