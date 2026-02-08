@@ -306,16 +306,16 @@ if (!window.ghostlyLoaded) {
                 };
 
                 try {
-                    const name = getText(pick('h1'));
-                    const headline = getText(pick('.text-body-medium.break-words', 'div.ph5 .text-body-medium', '.pv-text-details__left-panel .text-body-medium'));
-                    const location = getText(pick('.text-body-small.inline.t-black--light.break-words', '.pv-text-details__left-panel .text-body-small'));
+                    const name = getText(pick('h1.text-heading-xlarge', 'h1'));
+                    const headline = getText(pick('.text-body-medium.break-words', '.pv-text-details__left-panel .text-body-medium', '.text-body-medium.t-black'));
+                    const location = getText(pick('.text-body-small.inline.t-black--light.break-words', '.pv-text-details__left-panel .text-body-small', '.text-body-small.inline'));
 
-                    const aboutSection = findSectionByHeading(['à propos', 'about']);
+                    const aboutSection = findSectionByHeading(['à propos', 'about']) || document.querySelector('section[data-section="summary"]');
                     const about = aboutSection
                         ? getText(aboutSection.querySelector('.pv-shared-text-with-see-more, .inline-show-more-text, span[aria-hidden="true"]'))
                         : "";
 
-                    const expSection = findSectionByHeading(['expérience', 'experience']);
+                    const expSection = findSectionByHeading(['expérience', 'experience']) || document.querySelector('section[data-section="experience"]');
                     const firstRole = expSection
                         ? getText(expSection.querySelector('.pvs-entity__path-node, .pvs-entity__primary-title, .t-14.t-normal'))
                         : "";

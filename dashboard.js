@@ -162,7 +162,11 @@ document.addEventListener('DOMContentLoaded', () => {
         chrome.storage.local.get(['postQueue'], r => {
             const q = r.postQueue || [];
             q.push({id: Date.now(), content: txt, timestamp: new Date(time).getTime(), sent: false});
-            chrome.storage.local.set({postQueue: q}, () => { alert("Ajouté !"); loadQueue(); });
+            chrome.storage.local.set({postQueue: q}, () => {
+                chrome.runtime.sendMessage({ action: "QUEUE_UPDATED" });
+                alert("Ajouté !");
+                loadQueue();
+            });
         });
     });
 
