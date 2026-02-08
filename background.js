@@ -44,6 +44,17 @@ const scheduleNextPost = async () => {
     chrome.alarms.create(QUEUE_ALARM, { when });
 };
 
+const ensureQueueProcessing = async () => {
+    const queue = await getQueue();
+    const now = Date.now();
+    const hasDue = queue.some(item => !item.sent && item.timestamp && item.timestamp <= now);
+    if (hasDue) {
+        await processQueue();
+        return;
+    }
+    await scheduleNextPost();
+};
+
 const openLinkedInAndPost = async (content) => new Promise(resolve => {
     chrome.tabs.create({ url: "https://www.linkedin.com/feed/", active: false }, tab => {
         const tabId = tab.id;
@@ -184,18 +195,18 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       return true;
   }
   if (request.action === "QUEUE_UPDATED") {
-      scheduleNextPost();
+      ensureQueueProcessing();
       sendResponse({ success: true });
       return true;
   }
 });
 
 chrome.runtime.onInstalled.addListener(() => {
-    scheduleNextPost();
+    ensureQueueProcessing();
 });
 
 chrome.runtime.onStartup.addListener(() => {
-    scheduleNextPost();
+    ensureQueueProcessing();
 });
 
 chrome.alarms.onAlarm.addListener((alarm) => {
