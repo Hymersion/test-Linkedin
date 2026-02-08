@@ -143,7 +143,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             if (!ideas) throw new Error("EMPTY_IDEAS");
             sendResponse({ success: true, ideas });
         } catch (e) {
-            sendResponse({ success: false, ideas: "Idée 1|||Sujet simple###Idée 2|||Conseil pratique###Idée 3|||Retour d'expérience", error: "Erreur IA" });
+            const fallbackIdeas = "Idée 1|||Sujet simple###Idée 2|||Conseil pratique###Idée 3|||Retour d'expérience";
+            if (String(e && e.message).includes("OpenAI API key missing")) {
+                sendResponse({ success: true, ideas: fallbackIdeas });
+                return;
+            }
+            sendResponse({ success: false, ideas: fallbackIdeas, error: "Erreur IA" });
         }
       })();
       return true;
