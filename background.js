@@ -77,16 +77,19 @@ const ensureQueueProcessing = async () => {
 };
 
 const openLinkedInAndPost = async (content) => new Promise(resolve => {
-    chrome.tabs.create({ url: "https://www.linkedin.com/feed/", active: false }, tab => {
+    chrome.tabs.create({ url: "https://www.linkedin.com/feed/", active: true }, tab => {
         const tabId = tab.id;
         const onUpdated = async (updatedTabId, info) => {
             if (updatedTabId === tabId && info.status === "complete") {
                 chrome.tabs.onUpdated.removeListener(onUpdated);
                 try {
                     await chrome.scripting.executeScript({ target: { tabId }, files: ['content.js'] });
-                    chrome.tabs.sendMessage(tabId, { action: "WRITE_POST_ON_LINKEDIN", content, autoPost: true }, () => {
-                        resolve(true);
-                        chrome.tabs.remove(tabId);
+                    chrome.tabs.sendMessage(tabId, { action: "WRITE_POST_ON_LINKEDIN", content, autoPost: true }, (response) => {
+                        const success = response && response.success;
+                        resolve(!!success);
+                        if (success) {
+                            chrome.tabs.remove(tabId);
+                        }
                     });
                 } catch (e) {
                     resolve(false);

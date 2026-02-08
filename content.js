@@ -266,20 +266,28 @@ if (!window.ghostlyLoaded) {
                 let trigger = findByText('span', ['commencer un post', 'start a post', 'créer']);
                 if (trigger) trigger = trigger.closest('button') || trigger.closest('div[role="button"]');
                 if (!trigger) trigger = document.querySelector('button.share-box-feed-entry__trigger');
+                if (!trigger) {
+                    trigger = await waitForElement('button.share-box-feed-entry__trigger');
+                }
 
                 if (trigger) {
                     trigger.click(); await new Promise(r => setTimeout(r, 3000));
-                    const ed = document.querySelector('.ql-editor') || document.querySelector('[contenteditable="true"]');
+                    const ed = document.querySelector('.ql-editor') || document.querySelector('[contenteditable="true"]') || await waitForElement('.ql-editor');
                     if (ed) {
                         await securePaste(ed, request.content);
                         if (request.autoPost) {
                             const modal = document.querySelector('.share-box-modal') || document.body;
                             let pubBtn = modal.querySelector('.share-actions__primary-action') || modal.querySelector('.artdeco-button--primary');
+                            if (!pubBtn) {
+                                pubBtn = await waitForElement('.share-actions__primary-action', modal);
+                            }
                             if (pubBtn) forceClick(pubBtn);
                         }
+                        sendResponse({ success: true });
+                        return;
                     }
                 }
-                sendResponse({success:true});
+                sendResponse({ success: false });
             })();
             return true;
         }
