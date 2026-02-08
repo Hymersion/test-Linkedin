@@ -253,6 +253,57 @@ if (!window.ghostlyLoaded) {
             return true;
         }
         
-        if (request.action === "SCRAPE_MY_PROFILE") { return true; }
+        if (request.action === "SCRAPE_MY_PROFILE") {
+            (async () => {
+                const getText = (el) => (el && el.innerText ? el.innerText.trim() : "");
+                const pick = (...selectors) => {
+                    for (const selector of selectors) {
+                        const el = document.querySelector(selector);
+                        if (el && getText(el)) return el;
+                    }
+                    return null;
+                };
+                const findSectionByHeading = (texts) => {
+                    const sections = document.querySelectorAll('section');
+                    for (const section of sections) {
+                        const heading = section.querySelector('h2, h3');
+                        if (!heading) continue;
+                        const txt = getText(heading).toLowerCase();
+                        if (texts.some(t => txt.includes(t))) return section;
+                    }
+                    return null;
+                };
+
+                try {
+                    const name = getText(pick('h1'));
+                    const headline = getText(pick('.text-body-medium.break-words', 'div.ph5 .text-body-medium', '.pv-text-details__left-panel .text-body-medium'));
+                    const location = getText(pick('.text-body-small.inline.t-black--light.break-words', '.pv-text-details__left-panel .text-body-small'));
+
+                    const aboutSection = findSectionByHeading(['à propos', 'about']);
+                    const about = aboutSection
+                        ? getText(aboutSection.querySelector('.pv-shared-text-with-see-more, .inline-show-more-text, span[aria-hidden="true"]'))
+                        : "";
+
+                    const expSection = findSectionByHeading(['expérience', 'experience']);
+                    const firstRole = expSection
+                        ? getText(expSection.querySelector('.pvs-entity__path-node, .pvs-entity__primary-title, .t-14.t-normal'))
+                        : "";
+
+                    sendResponse({
+                        success: true,
+                        data: {
+                            name,
+                            headline,
+                            location,
+                            about,
+                            experience: firstRole
+                        }
+                    });
+                } catch (e) {
+                    sendResponse({ success: false, error: "Profile scrape failed." });
+                }
+            })();
+            return true;
+        }
     });
 }
