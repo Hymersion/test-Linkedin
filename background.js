@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 const API_KEY = "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"; 
+=======
+const API_KEY = "";
+>>>>>>> codex/activer-cle-secrete-pour-fonctionnalites-76k82j
 const QUEUE_ALARM = "ghostly-post-queue";
 
 const getQueue = () => new Promise(resolve => {
@@ -9,6 +13,30 @@ const setQueue = (queue) => new Promise(resolve => {
     chrome.storage.local.set({ postQueue: queue }, resolve);
 });
 
+<<<<<<< HEAD
+=======
+const fetchOpenAI = async (payload) => {
+    if (!API_KEY) {
+        return { ok: false, data: null, error: "OpenAI API key missing" };
+    }
+    const r = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${API_KEY}` },
+        body: JSON.stringify(payload)
+    });
+    let data = null;
+    try {
+        data = await r.json();
+    } catch (e) {
+        data = null;
+    }
+    if (!r.ok) {
+        return { ok: false, data, error: `OpenAI ${r.status}` };
+    }
+    return { ok: true, data, error: null };
+};
+
+>>>>>>> codex/activer-cle-secrete-pour-fonctionnalites-76k82j
 const scheduleNextPost = async () => {
     const queue = await getQueue();
     const next = queue
@@ -71,8 +99,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "ANALYZE_FEED_MANUAL") {
       (async () => {
           const results = [];
+          let hadError = false;
           for(let p of request.posts.slice(0, 8)) {
              try {
+<<<<<<< HEAD
                  const r = await fetch("https://api.openai.com/v1/chat/completions", {
                     method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${API_KEY}` },
                     body: JSON.stringify({ model: "gpt-4o", messages: [{role:"user", content: `CONTEXTE: LinkedIn. POST: "${p.text.substring(0,200)}...". Si pertinent pro, écris une réponse précise et contextualisée (1-2 phrases), évite les phrases génériques. Si non pertinent: SKIP.`}], temperature: 0.6 })
@@ -80,12 +110,22 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                  const d = await r.json();
                  const content = d && d.choices && d.choices[0] && d.choices[0].message
                      ? d.choices[0].message.content
+=======
+                 const { ok, data, error } = await fetchOpenAI({
+                    model: "gpt-4o",
+                    messages: [{role:"user", content: `CONTEXTE: LinkedIn. POST: "${p.text.substring(0,200)}...". Si pertinent pro, écris une réponse précise et contextualisée (1-2 phrases), évite les phrases génériques. Si non pertinent: SKIP.`}],
+                    temperature: 0.6
+                 });
+                 if (!ok) throw new Error(error);
+                 const content = data && data.choices && data.choices[0] && data.choices[0].message
+                     ? data.choices[0].message.content
+>>>>>>> codex/activer-cle-secrete-pour-fonctionnalites-76k82j
                      : "";
                  let rep = clean(content);
                  if(rep.length > 1) { p.aiReply = rep; results.push(p); }
-             } catch(e){ p.aiReply = "Erreur IA"; results.push(p); }
+             } catch(e){ p.aiReply = "Erreur IA"; results.push(p); hadError = true; }
           }
-          sendResponse({ success: true, results: results });
+          sendResponse({ success: true, results: results, error: hadError ? "Erreur IA" : null });
       })();
       return true;
   }
@@ -93,13 +133,20 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "GENERATE_SAV_REPLY") {
     (async () => {
         try {
+<<<<<<< HEAD
             const r = await fetch("https://api.openai.com/v1/chat/completions", {
                 method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${API_KEY}` },
                 body: JSON.stringify({ model: "gpt-4o", messages: [{role:"user", content: `Persona: "${request.persona || "Expert"}". Contexte: "${request.postContext.substring(0,150)}...". Commentaire: "${request.text}". Tâche: réponse courte (1-2 phrases), spécifique, sans formules génériques.`}], temperature: 0.5 })
+=======
+            const { ok, data, error } = await fetchOpenAI({
+                model: "gpt-4o",
+                messages: [{role:"user", content: `Persona: "${request.persona || "Expert"}". Contexte: "${request.postContext.substring(0,150)}...". Commentaire: "${request.text}". Tâche: réponse courte (1-2 phrases), spécifique, sans formules génériques.`}],
+                temperature: 0.5
+>>>>>>> codex/activer-cle-secrete-pour-fonctionnalites-76k82j
             });
-            const d = await r.json();
-            sendResponse({ reply: clean(d.choices[0].message.content) });
-        } catch (e) { sendResponse({ reply: "Merci !" }); }
+            if (!ok) throw new Error(error);
+            sendResponse({ reply: clean(data.choices[0].message.content) });
+        } catch (e) { sendResponse({ reply: "Merci !", error: "Erreur IA" }); }
     })();
     return true; 
   }
@@ -107,6 +154,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "GENERATE_DAILY_IDEAS") {
       (async () => {
         try {
+<<<<<<< HEAD
             const r = await fetch("https://api.openai.com/v1/chat/completions", {
                 method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${API_KEY}` },
                 body: JSON.stringify({ model: "gpt-4o", messages: [{role:"user", content: `3 idées posts LinkedIn.`}], temperature: 0.8 })
@@ -114,23 +162,56 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             const d = await r.json();
             const ideas = d && d.choices && d.choices[0] && d.choices[0].message
                 ? d.choices[0].message.content
+=======
+            const { ok, data, error } = await fetchOpenAI({
+                model: "gpt-4o",
+                messages: [{role:"user", content: `3 idées posts LinkedIn.`}],
+                temperature: 0.8
+            });
+            if (!ok) throw new Error(error);
+            const ideas = data && data.choices && data.choices[0] && data.choices[0].message
+                ? data.choices[0].message.content
+>>>>>>> codex/activer-cle-secrete-pour-fonctionnalites-76k82j
                 : "";
             if (!ideas) throw new Error("EMPTY_IDEAS");
             sendResponse({ success: true, ideas });
         } catch (e) {
+<<<<<<< HEAD
             sendResponse({ success: false, ideas: "Idée 1|||Sujet simple###Idée 2|||Conseil pratique###Idée 3|||Retour d'expérience", error: "Erreur IA" });
+=======
+            const fallbackIdeas = "Idée 1|||Sujet simple###Idée 2|||Conseil pratique###Idée 3|||Retour d'expérience";
+            if (String(e && e.message).includes("OpenAI API key missing")) {
+                sendResponse({ success: true, ideas: fallbackIdeas });
+                return;
+            }
+            sendResponse({ success: false, ideas: fallbackIdeas, error: "Erreur IA" });
+>>>>>>> codex/activer-cle-secrete-pour-fonctionnalites-76k82j
         }
       })();
       return true;
   }
   if (request.action === "WRITE_FINAL_POST") {
     (async () => {
+<<<<<<< HEAD
         const r = await fetch("https://api.openai.com/v1/chat/completions", {
             method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${API_KEY}` },
                 body: JSON.stringify({ model: "gpt-4o", messages: [{role:"user", content: `IDENTITÉ:${request.persona}. SUJET:"${request.angle}". Rédige un post complet, concret et spécifique.`}], temperature: 0.7 })
         });
         const d = await r.json();
         sendResponse({ success: true, post: d.choices[0].message.content });
+=======
+        try {
+            const { ok, data, error } = await fetchOpenAI({
+                model: "gpt-4o",
+                messages: [{role:"user", content: `IDENTITÉ:${request.persona}. SUJET:"${request.angle}". Rédige un post complet, concret et spécifique.`}],
+                temperature: 0.7
+            });
+            if (!ok) throw new Error(error);
+            sendResponse({ success: true, post: data.choices[0].message.content });
+        } catch (e) {
+            sendResponse({ success: false, post: "", error: "Erreur IA" });
+        }
+>>>>>>> codex/activer-cle-secrete-pour-fonctionnalites-76k82j
     })();
     return true;
   }
@@ -138,13 +219,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "BUILD_PERSONA") {
       (async () => {
         try {
-            const r = await fetch("https://api.openai.com/v1/chat/completions", {
-                method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${API_KEY}` },
-                body: JSON.stringify({ model: "gpt-4o", messages: [{role: "user", content: `Analyse profil: ${request.profile.headline}. System Prompt court.`}], temperature: 0.7 })
+            const { ok, data, error } = await fetchOpenAI({
+                model: "gpt-4o",
+                messages: [{role: "user", content: `Analyse profil: ${request.profile.headline}. System Prompt court.`}],
+                temperature: 0.7
             });
-            const d = await r.json();
-            sendResponse({ reply: d.choices[0].message.content });
-        } catch(e) { sendResponse({ reply: "Expert LinkedIn." }); }
+            if (!ok) throw new Error(error);
+            sendResponse({ reply: data.choices[0].message.content });
+        } catch(e) { sendResponse({ reply: "Expert LinkedIn.", error: "Erreur IA" }); }
       })();
       return true;
   }
