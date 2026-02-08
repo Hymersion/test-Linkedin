@@ -75,10 +75,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
              try {
                  const r = await fetch("https://api.openai.com/v1/chat/completions", {
                     method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${API_KEY}` },
-                body: JSON.stringify({ model: "gpt-4o", messages: [{role:"user", content: `CONTEXTE: LinkedIn. POST: "${p.text.substring(0,200)}...". Si pertinent pro, écris une réponse précise et contextualisée (1-2 phrases), évite les phrases génériques. Si non pertinent: SKIP.`}], temperature: 0.6 })
+                    body: JSON.stringify({ model: "gpt-4o", messages: [{role:"user", content: `CONTEXTE: LinkedIn. POST: "${p.text.substring(0,200)}...". Si pertinent pro, écris une réponse précise et contextualisée (1-2 phrases), évite les phrases génériques. Si non pertinent: SKIP.`}], temperature: 0.6 })
                  });
                  const d = await r.json();
-                 let rep = clean(d.choices[0].message.content);
+                 const content = d && d.choices && d.choices[0] && d.choices[0].message
+                     ? d.choices[0].message.content
+                     : "";
+                 let rep = clean(content);
                  if(rep.length > 1) { p.aiReply = rep; results.push(p); }
              } catch(e){ p.aiReply = "Erreur IA"; results.push(p); }
           }
@@ -103,12 +106,20 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   // EDITEUR
   if (request.action === "GENERATE_DAILY_IDEAS") {
       (async () => {
-        const r = await fetch("https://api.openai.com/v1/chat/completions", {
-            method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${API_KEY}` },
-            body: JSON.stringify({ model: "gpt-4o", messages: [{role:"user", content: `3 idées posts LinkedIn.`}], temperature: 0.8 })
-        });
-        const d = await r.json();
-        sendResponse({ success: true, ideas: d.choices[0].message.content });
+        try {
+            const r = await fetch("https://api.openai.com/v1/chat/completions", {
+                method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${API_KEY}` },
+                body: JSON.stringify({ model: "gpt-4o", messages: [{role:"user", content: `3 idées posts LinkedIn.`}], temperature: 0.8 })
+            });
+            const d = await r.json();
+            const ideas = d && d.choices && d.choices[0] && d.choices[0].message
+                ? d.choices[0].message.content
+                : "";
+            if (!ideas) throw new Error("EMPTY_IDEAS");
+            sendResponse({ success: true, ideas });
+        } catch (e) {
+            sendResponse({ success: false, ideas: "Idée 1|||Sujet simple###Idée 2|||Conseil pratique###Idée 3|||Retour d'expérience", error: "Erreur IA" });
+        }
       })();
       return true;
   }
