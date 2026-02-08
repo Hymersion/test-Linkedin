@@ -84,13 +84,22 @@ const openLinkedInAndPost = async (content) => new Promise(resolve => {
                 chrome.tabs.onUpdated.removeListener(onUpdated);
                 try {
                     await chrome.scripting.executeScript({ target: { tabId }, files: ['content.js'] });
-                    chrome.tabs.sendMessage(tabId, { action: "WRITE_POST_ON_LINKEDIN", content, autoPost: true }, (response) => {
-                        const success = response && response.success;
-                        resolve(!!success);
-                        if (success) {
-                            chrome.tabs.remove(tabId);
-                        }
-                    });
+                    let attempts = 0;
+                    const sendPost = () => {
+                        attempts += 1;
+                        chrome.tabs.sendMessage(tabId, { action: "WRITE_POST_ON_LINKEDIN", content, autoPost: true }, (response) => {
+                            const success = response && response.success;
+                            if (!success && attempts < 3) {
+                                setTimeout(sendPost, 2000);
+                                return;
+                            }
+                            resolve(!!success);
+                            if (success) {
+                                chrome.tabs.remove(tabId);
+                            }
+                        });
+                    };
+                    sendPost();
                 } catch (e) {
                     resolve(false);
                 }
