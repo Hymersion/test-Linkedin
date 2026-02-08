@@ -28,6 +28,14 @@ if (!window.ghostlyLoaded) {
         return true;
     };
 
+    const findSubmitButton = (container) => {
+        if (!container) return null;
+        return container.querySelector('.artdeco-button--primary') ||
+               container.querySelector('button[type="submit"]') ||
+               container.querySelector('button[aria-label*="Publier"]') ||
+               container.querySelector('button[aria-label*="Post"]');
+    };
+
     const securePaste = async (editor, text) => {
         editor.focus();
         document.execCommand('selectAll', false, null);
@@ -130,15 +138,18 @@ if (!window.ghostlyLoaded) {
                             
                             // 3. Publier (Recherche Locale)
                             // On cherche le bouton DANS le conteneur du commentaire
-                            const container = ed.closest('form') || ed.closest('.comments-comment-box');
+                            const container = ed.closest('form') || ed.closest('.comments-comment-box') || el;
                             
                             if (container) {
-                                let submit = container.querySelector('.artdeco-button--primary') || 
-                                             container.querySelector('button[type="submit"]');
+                                let submit = findSubmitButton(container);
                                 
                                 if (!submit) { // Fallback texte
                                     const txtSubmit = findByText('span', ['publier', 'post'], container);
                                     if(txtSubmit) submit = txtSubmit.closest('button');
+                                }
+
+                                if(!submit) {
+                                    submit = findSubmitButton(document);
                                 }
 
                                 if(submit) {
@@ -218,11 +229,15 @@ if (!window.ghostlyLoaded) {
                         const ed = targetEl.querySelector('.ql-editor') || targetEl.querySelector('[contenteditable="true"]');
                         if (ed) {
                             await securePaste(ed, request.replyText);
-                            const form = ed.closest('form');
-                            let submit = form ? (form.querySelector('.artdeco-button--primary') || form.querySelector('button[type="submit"]')) : null;
-                            if (submit) { forceClick(submit); sendResponse({success:true}); return; }
+                        const form = ed.closest('form') || targetEl;
+                        let submit = form ? findSubmitButton(form) : null;
+                        if(!submit) {
+                            const txtSubmit = findByText('span', ['publier', 'post'], form || targetEl);
+                            if(txtSubmit) submit = txtSubmit.closest('button');
                         }
+                        if (submit) { forceClick(submit); sendResponse({success:true}); return; }
                     }
+                }
                 }
                 sendResponse({success:false});
             })();

@@ -15,7 +15,9 @@ document.addEventListener('DOMContentLoaded', () => {
     let FOUND_COMS = [];
     let RADAR_OPPS = [];
 
-    chrome.storage.local.get(['persona'], r => { if(promptBox) promptBox.value = r.persona || "Expert."; });
+    chrome.storage.local.get(['persona'], r => {
+        if (promptBox) promptBox.value = r.persona || "Expert.";
+    });
 
     function nav(key, url, cb) {
         chrome.tabs.query({active:true, currentWindow:true}, async t => {
@@ -136,7 +138,12 @@ document.addEventListener('DOMContentLoaded', () => {
             const div = document.getElementById('zone_ideas'); div.innerHTML="";
             r.ideas.split('###').forEach(i => {
                 const b = document.createElement('button'); b.innerText = i.split('|||')[0]; b.style.background="#eee"; b.style.color="black";
-                b.onclick = () => { document.getElementById('input_final').value = "Rédaction..."; chrome.runtime.sendMessage({action:"WRITE_FINAL_POST", angle:i, persona:promptBox.value}, res => document.getElementById('input_final').value = res.post); };
+                b.onclick = () => {
+                    document.getElementById('input_final').value = "Rédaction...";
+                    chrome.runtime.sendMessage({action:"WRITE_FINAL_POST", angle:i, persona:promptBox.value}, res => {
+                        document.getElementById('input_final').value = res.post;
+                    });
+                };
                 div.appendChild(b);
             });
         });
