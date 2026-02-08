@@ -136,7 +136,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                   : "";
               sendResponse({ success: true, message: content || "OK" });
           } catch (e) {
-              sendResponse({ success: false, error: "Erreur IA" });
+              sendResponse({ success: false, error: e && e.message ? e.message : "Erreur IA" });
           }
       })();
       return true;

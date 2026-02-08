@@ -244,7 +244,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (apiStatus) apiStatus.textContent = "Test en cours...";
         chrome.runtime.sendMessage({ action: "TEST_OPENAI" }, res => {
             if (!res || res.success === false) {
-                if (apiStatus) apiStatus.textContent = "Échec de connexion.";
+                const message = res && res.error ? res.error : "Échec de connexion.";
+                if (apiStatus) apiStatus.textContent = message;
                 return;
             }
             if (apiStatus) apiStatus.textContent = "Connexion OK.";
