@@ -1,6 +1,7 @@
 document.addEventListener('DOMContentLoaded', () => {
 
     const map = { 'nav_id': 'tab_id', 'nav_com': 'tab_com', 'nav_radar': 'tab_radar', 'nav_post': 'tab_post', 'nav_queue': 'tab_queue' };
+    const API_KEY_STORAGE_KEY = "openaiApiKey";
     Object.keys(map).forEach(navId => {
         document.getElementById(navId).addEventListener('click', () => {
             document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
@@ -12,12 +13,29 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     const promptBox = document.getElementById('prompt_box');
+    const apiKeyInput = document.getElementById('input_api_key');
     let FOUND_COMS = [];
     let RADAR_OPPS = [];
 
     chrome.storage.local.get(['persona'], r => {
         if (promptBox) promptBox.value = r.persona || "Expert.";
     });
+
+    const loadApiKey = () => {
+        if (!apiKeyInput) return;
+        chrome.storage.sync.get([API_KEY_STORAGE_KEY], syncResult => {
+            const syncKey = (syncResult[API_KEY_STORAGE_KEY] || "").trim();
+            if (syncKey) {
+                apiKeyInput.value = syncKey;
+                return;
+            }
+            chrome.storage.local.get([API_KEY_STORAGE_KEY], localResult => {
+                apiKeyInput.value = (localResult[API_KEY_STORAGE_KEY] || "").trim();
+            });
+        });
+    };
+
+    loadApiKey();
 
     function nav(key, url, cb) {
         chrome.tabs.query({active:true, currentWindow:true}, async t => {
@@ -225,4 +243,19 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
     document.getElementById('btn_save').addEventListener('click', () => chrome.storage.local.set({persona:promptBox.value}, ()=>alert("Sauvé")));
+
+    if (apiKeyInput) {
+        document.getElementById('btn_save_api_key').addEventListener('click', () => {
+            const apiKey = apiKeyInput.value.trim();
+            if (!apiKey) {
+                chrome.storage.sync.remove([API_KEY_STORAGE_KEY], () => {
+                    chrome.storage.local.remove([API_KEY_STORAGE_KEY], () => alert("Clé supprimée."));
+                });
+                return;
+            }
+            chrome.storage.sync.set({ [API_KEY_STORAGE_KEY]: apiKey }, () => {
+                chrome.storage.local.set({ [API_KEY_STORAGE_KEY]: apiKey }, () => alert("Clé sauvegardée."));
+            });
+        });
+    }
 });

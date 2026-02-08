@@ -1,5 +1,18 @@
-const API_KEY = "";
+const API_KEY_STORAGE_KEY = "openaiApiKey";
 const QUEUE_ALARM = "ghostly-post-queue";
+
+const getApiKey = () => new Promise(resolve => {
+    chrome.storage.sync.get([API_KEY_STORAGE_KEY], syncResult => {
+        const syncKey = (syncResult[API_KEY_STORAGE_KEY] || "").trim();
+        if (syncKey) {
+            resolve(syncKey);
+            return;
+        }
+        chrome.storage.local.get([API_KEY_STORAGE_KEY], localResult => {
+            resolve((localResult[API_KEY_STORAGE_KEY] || "").trim());
+        });
+    });
+});
 
 const getQueue = () => new Promise(resolve => {
     chrome.storage.local.get(['postQueue'], r => resolve(r.postQueue || []));
@@ -10,12 +23,13 @@ const setQueue = (queue) => new Promise(resolve => {
 });
 
 const fetchOpenAI = async (payload) => {
-    if (!API_KEY) {
+    const apiKey = await getApiKey();
+    if (!apiKey) {
         return { ok: false, data: null, error: "OpenAI API key missing" };
     }
     const r = await fetch("https://api.openai.com/v1/chat/completions", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${API_KEY}` },
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
         body: JSON.stringify(payload)
     });
     let data = null;
