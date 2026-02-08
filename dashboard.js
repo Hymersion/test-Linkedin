@@ -15,7 +15,9 @@ document.addEventListener('DOMContentLoaded', () => {
     let FOUND_COMS = [];
     let RADAR_OPPS = [];
 
-    chrome.storage.local.get(['persona'], r => { if(promptBox) promptBox.value = r.persona || "Expert."; });
+    chrome.storage.local.get(['persona'], r => {
+        if (promptBox) promptBox.value = r.persona || "Expert.";
+    });
 
     function nav(key, url, cb) {
         chrome.tabs.query({active:true, currentWindow:true}, async t => {
@@ -60,6 +62,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     div.appendChild(d);
                     
                     chrome.runtime.sendMessage({action:"GENERATE_SAV_REPLY", text:c.text, postContext:r.postContext, persona:promptBox.value}, ai=>{ 
+                        if (ai && ai.error) {
+                            alert(ai.error);
+                        }
                         document.getElementById(`rc-${c.index}`).value = ai.reply; 
                     });
                 });
@@ -100,6 +105,9 @@ document.addEventListener('DOMContentLoaded', () => {
             chrome.tabs.sendMessage(tid, {action:"SCAN_FEED", duration:time}, r => {
                 if(r && r.posts) {
                     chrome.runtime.sendMessage({action:"ANALYZE_FEED_MANUAL", posts:r.posts, persona:promptBox.value}, ai => {
+                        if (ai && ai.error) {
+                            alert(ai.error);
+                        }
                         RADAR_OPPS = ai.results;
                         const div = document.getElementById('list_radar'); div.innerHTML="";
                         document.getElementById('zone_radar').style.display='block';
@@ -133,10 +141,22 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- RESTE INCHANGE ---
     document.getElementById('btn_ideas').addEventListener('click', () => {
         chrome.runtime.sendMessage({action:"GENERATE_DAILY_IDEAS", persona:promptBox.value}, r => {
+            if (r && r.error) {
+                alert(r.error);
+            }
             const div = document.getElementById('zone_ideas'); div.innerHTML="";
             r.ideas.split('###').forEach(i => {
                 const b = document.createElement('button'); b.innerText = i.split('|||')[0]; b.style.background="#eee"; b.style.color="black";
-                b.onclick = () => { document.getElementById('input_final').value = "Rédaction..."; chrome.runtime.sendMessage({action:"WRITE_FINAL_POST", angle:i, persona:promptBox.value}, res => document.getElementById('input_final').value = res.post); };
+                b.onclick = () => {
+                    document.getElementById('input_final').value = "Rédaction...";
+                    chrome.runtime.sendMessage({action:"WRITE_FINAL_POST", angle:i, persona:promptBox.value}, res => {
+                        if (res && res.error) {
+                            alert(res.error);
+                            return;
+                        }
+                        document.getElementById('input_final').value = res.post;
+                    });
+                };
                 div.appendChild(b);
             });
         });
@@ -155,7 +175,11 @@ document.addEventListener('DOMContentLoaded', () => {
         chrome.storage.local.get(['postQueue'], r => {
             const q = r.postQueue || [];
             q.push({id: Date.now(), content: txt, timestamp: new Date(time).getTime(), sent: false});
-            chrome.storage.local.set({postQueue: q}, () => { alert("Ajouté !"); loadQueue(); });
+            chrome.storage.local.set({postQueue: q}, () => {
+                chrome.runtime.sendMessage({ action: "QUEUE_UPDATED" });
+                alert("Ajouté !");
+                loadQueue();
+            });
         });
     });
 
@@ -165,8 +189,24 @@ document.addEventListener('DOMContentLoaded', () => {
             const q = r.postQueue || [];
             q.forEach(p => {
                 const d = document.createElement('div'); d.className = "queue-item";
-                d.innerHTML = `<b>${new Date(p.timestamp).toLocaleString()}</b><br>${p.content.substring(0,30)}...`;
+                d.innerHTML = `
+                    <div class="queue-meta">
+                        <b>${new Date(p.timestamp).toLocaleString()}</b><br>
+                        ${p.content.substring(0,30)}...
+                    </div>
+                    <button class="queue-delete" data-id="${p.id}">Supprimer</button>
+                `;
                 div.appendChild(d);
+            });
+            div.querySelectorAll('.queue-delete').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    const id = Number(e.currentTarget.dataset.id);
+                    const nextQueue = (q || []).filter(item => item.id !== id);
+                    chrome.storage.local.set({ postQueue: nextQueue }, () => {
+                        chrome.runtime.sendMessage({ action: "QUEUE_UPDATED" });
+                        loadQueue();
+                    });
+                });
             });
         });
     }
@@ -176,6 +216,9 @@ document.addEventListener('DOMContentLoaded', () => {
         nav("linkedin.com/in/", "https://www.linkedin.com/in/me/", tid => {
             chrome.tabs.sendMessage(tid, {action:"SCRAPE_MY_PROFILE"}, r => {
                 if(r && r.success) chrome.runtime.sendMessage({action:"BUILD_PERSONA", profile:r.data}, ai => {
+                    if (ai && ai.error) {
+                        alert(ai.error);
+                    }
                     promptBox.value = ai.reply; chrome.storage.local.set({persona:ai.reply});
                 });
             });

@@ -3,64 +3,211 @@
 <head>
   <meta charset="UTF-8">
   <style>
-    body{font-family:sans-serif;margin:0;display:flex;height:600px;width:500px;}
-    .sidebar{width:100px;background:#f0f0f0;padding:10px;}
-    .main{flex:1;padding:10px;overflow-y:auto;}
-    .nav-btn{width:100%;padding:10px;margin-bottom:5px;border:none;cursor:pointer;text-align:left;}
-    .nav-btn.active{background:#0073b1;color:white;}
-    .tab{display:none;} .tab.active{display:block;}
-    button{width:100%;padding:8px;margin-top:5px;cursor:pointer;background:#0073b1;color:white;border:none;}
-    textarea,input{width:100%;box-sizing:border-box;margin-bottom:5px;}
-    .card{border:1px solid #ccc;padding:8px;margin-bottom:8px;background:#fff;font-size:12px;}
-    .queue-item{border-left:4px solid orange; padding:5px; margin-bottom:5px; background:#fff;}
+    :root{
+      --bg:#f5f7fb;
+      --surface:#ffffff;
+      --text:#1f2a44;
+      --muted:#6b7280;
+      --primary:#2563eb;
+      --primary-strong:#1e40af;
+      --accent:#f59e0b;
+      --success:#16a34a;
+      --danger:#dc2626;
+      --shadow:0 10px 30px rgba(15, 23, 42, 0.08);
+      --radius:14px;
+    }
+    *{box-sizing:border-box;}
+    body{
+      font-family: "Inter", "Segoe UI", system-ui, sans-serif;
+      margin:0;
+      display:flex;
+      height:620px;
+      width:520px;
+      background:var(--bg);
+      color:var(--text);
+    }
+    .sidebar{
+      width:120px;
+      padding:14px 10px;
+      background:linear-gradient(180deg, #0f172a, #1e293b);
+      color:#fff;
+      display:flex;
+      flex-direction:column;
+      gap:8px;
+    }
+    .brand{
+      font-weight:700;
+      font-size:13px;
+      letter-spacing:0.4px;
+      text-transform:uppercase;
+      margin-bottom:8px;
+    }
+    .main{
+      flex:1;
+      padding:16px 18px;
+      overflow-y:auto;
+    }
+    .nav-btn{
+      width:100%;
+      padding:10px;
+      margin:0;
+      border:none;
+      border-radius:10px;
+      cursor:pointer;
+      text-align:left;
+      background:rgba(255,255,255,0.08);
+      color:#e2e8f0;
+      font-size:12px;
+      transition:all 0.2s ease;
+    }
+    .nav-btn:hover{background:rgba(255,255,255,0.16);}
+    .nav-btn.active{
+      background:#fff;
+      color:#0f172a;
+      font-weight:600;
+    }
+    .tab{display:none;}
+    .tab.active{display:block;}
+    h3{
+      margin:0 0 10px 0;
+      font-size:18px;
+    }
+    .section{
+      background:var(--surface);
+      padding:14px;
+      border-radius:var(--radius);
+      box-shadow:var(--shadow);
+      margin-bottom:14px;
+    }
+    button{
+      width:100%;
+      padding:10px 12px;
+      margin-top:8px;
+      cursor:pointer;
+      background:var(--primary);
+      color:white;
+      border:none;
+      border-radius:10px;
+      font-weight:600;
+      transition:transform 0.1s ease, background 0.2s ease;
+    }
+    button:hover{background:var(--primary-strong);}
+    button:active{transform:scale(0.99);}
+    textarea,input{
+      width:100%;
+      box-sizing:border-box;
+      margin-bottom:6px;
+      border:1px solid #e5e7eb;
+      border-radius:10px;
+      padding:10px;
+      font-size:12px;
+      background:#f8fafc;
+    }
+    label{font-size:12px;color:var(--muted);}
+    .card{
+      border:1px solid #e5e7eb;
+      padding:10px;
+      margin-bottom:8px;
+      background:#fff;
+      font-size:12px;
+      border-radius:12px;
+    }
+    .queue-item{
+      border-left:4px solid var(--accent);
+      padding:8px;
+      margin-bottom:8px;
+      background:#fff;
+      border-radius:10px;
+      font-size:12px;
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:8px;
+    }
+    .queue-meta{flex:1;}
+    .queue-delete{
+      width:auto;
+      margin:0;
+      padding:6px 8px;
+      font-size:11px;
+      border-radius:8px;
+      background:#fee2e2;
+      color:#991b1b;
+    }
+    .queue-delete:hover{background:#fecaca;}
+    .btn-secondary{background:#e5e7eb;color:#111827;}
+    .btn-secondary:hover{background:#d1d5db;}
+    .btn-success{background:var(--success);}
+    .btn-danger{background:var(--danger);}
+    .btn-accent{background:var(--accent);}
+    .muted{color:var(--muted);font-size:12px;}
+    .row{display:flex;gap:8px;}
+    .row > *{flex:1;}
   </style>
 </head>
 <body>
   <div class="sidebar">
-    <button class="nav-btn active" id="nav_radar" style="color:#d35400;">Radar</button>
+    <div class="brand">Ghostly</div>
+    <button class="nav-btn active" id="nav_radar">Radar</button>
     <button class="nav-btn" id="nav_id">Identité</button>
     <button class="nav-btn" id="nav_com">Réponses</button>
     <button class="nav-btn" id="nav_post">Éditeur</button>
-    <button class="nav-btn" id="nav_queue" style="color:green;">Planning</button>
+    <button class="nav-btn" id="nav_queue">Planning</button>
   </div>
   
   <div class="main">
     <div id="tab_radar" class="tab active">
         <h3>Radar</h3>
-        <input type="number" id="input_scroll" value="20">
-        <button id="btn_scan_radar" style="background:#d35400;">Lancer Radar</button>
-        <div id="zone_radar" style="display:none; margin-top:10px;">
+        <div class="section">
+            <label for="input_scroll">Durée du scan (sec)</label>
+            <input type="number" id="input_scroll" value="20">
+            <button id="btn_scan_radar" class="btn-accent">Lancer Radar</button>
+            <p class="muted">Analyse le fil LinkedIn et propose des réponses prêtes à publier.</p>
+        </div>
+        <div id="zone_radar" class="section" style="display:none;">
             <div id="list_radar"></div>
-            <button id="btn_pub_radar" style="background:green;">Publier Sélection</button>
+            <button id="btn_pub_radar" class="btn-success">Publier Sélection</button>
         </div>
     </div>
     <div id="tab_id" class="tab">
         <h3>Identité</h3>
-        <button id="btn_scan_profile">Scanner Profil</button>
-        <textarea id="prompt_box" style="height:100px;"></textarea>
-        <button id="btn_save">Sauver</button>
+        <div class="section">
+            <button id="btn_scan_profile" class="btn-secondary">Scanner Profil</button>
+            <label for="prompt_box">Persona</label>
+            <textarea id="prompt_box" style="height:120px;"></textarea>
+            <button id="btn_save">Sauver</button>
+        </div>
     </div>
     <div id="tab_com" class="tab">
         <h3>Post Unique</h3>
-        <input id="input_url" placeholder="URL du post...">
-        <button id="btn_scan_post">Scanner le post</button>
-        <div id="zone_coms"></div>
-        <button id="btn_pub_all" style="background:green;display:none;">Publier Tout</button>
+        <div class="section">
+            <label for="input_url">URL du post</label>
+            <input id="input_url" placeholder="https://www.linkedin.com/...">
+            <button id="btn_scan_post">Scanner le post</button>
+            <div id="zone_coms"></div>
+            <button id="btn_pub_all" class="btn-success" style="display:none;">Publier Tout</button>
+        </div>
     </div>
     <div id="tab_post" class="tab">
         <h3>Éditeur</h3>
-        <button id="btn_ideas">Générer Idées</button>
-        <div id="zone_ideas"></div>
-        <textarea id="input_final" style="height:150px;"></textarea>
-        <hr>
-        <input type="datetime-local" id="schedule_time">
-        <button id="btn_add_queue" style="background:orange;">Mettre en File</button>
-        <button id="btn_pub_now" style="background:red;">Publier Maintenant</button>
+        <div class="section">
+            <button id="btn_ideas">Générer Idées</button>
+            <div id="zone_ideas"></div>
+            <label for="input_final">Votre post</label>
+            <textarea id="input_final" style="height:160px;"></textarea>
+            <div class="row">
+                <input type="datetime-local" id="schedule_time">
+                <button id="btn_add_queue" class="btn-accent">Mettre en File</button>
+            </div>
+            <button id="btn_pub_now" class="btn-danger">Publier Maintenant</button>
+        </div>
     </div>
     <div id="tab_queue" class="tab">
         <h3>File d'attente</h3>
-        <button id="btn_refresh_queue" style="background:#eee;color:black">Rafraîchir</button>
-        <div id="list_queue"></div>
+        <div class="section">
+            <button id="btn_refresh_queue" class="btn-secondary">Rafraîchir</button>
+            <div id="list_queue"></div>
+        </div>
     </div>
   </div>
   <script src="dashboard.js"></script>
