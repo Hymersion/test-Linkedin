@@ -263,23 +263,40 @@ if (!window.ghostlyLoaded) {
         // --- 5. EDITEUR ---
         if (request.action === "WRITE_POST_ON_LINKEDIN") {
             (async () => {
-                let trigger = findByText('span', ['commencer un post', 'start a post', 'créer']);
+                let trigger = findByText('span', ['commencer un post', 'start a post', 'créer', 'créer un post', 'create a post']);
                 if (trigger) trigger = trigger.closest('button') || trigger.closest('div[role="button"]');
-                if (!trigger) trigger = document.querySelector('button.share-box-feed-entry__trigger');
                 if (!trigger) {
-                    trigger = await waitForElement('button.share-box-feed-entry__trigger');
+                    trigger = document.querySelector('button.share-box-feed-entry__trigger');
+                }
+                if (!trigger) {
+                    trigger = document.querySelector('button[aria-label*="post" i], button[aria-label*="publier" i]');
+                }
+                if (!trigger) {
+                    trigger = await waitForElement('button.share-box-feed-entry__trigger', document, 20, 500);
+                }
+                if (!trigger) {
+                    trigger = await waitForElement('button[aria-label*="post" i]', document, 20, 500);
                 }
 
                 if (trigger) {
                     trigger.click(); await new Promise(r => setTimeout(r, 3000));
-                    const ed = document.querySelector('.ql-editor') || document.querySelector('[contenteditable="true"]') || await waitForElement('.ql-editor');
+                    const modal = await waitForElement('.share-box-modal, .artdeco-modal', document, 20, 500) || document.body;
+                    const ed = modal.querySelector('.ql-editor') ||
+                        modal.querySelector('[contenteditable="true"]') ||
+                        document.querySelector('.ql-editor') ||
+                        document.querySelector('[contenteditable="true"]') ||
+                        await waitForElement('.ql-editor', modal, 20, 500);
                     if (ed) {
                         await securePaste(ed, request.content);
                         if (request.autoPost) {
-                            const modal = document.querySelector('.share-box-modal') || document.body;
-                            let pubBtn = modal.querySelector('.share-actions__primary-action') || modal.querySelector('.artdeco-button--primary');
+                            let pubBtn = modal.querySelector('.share-actions__primary-action') ||
+                                modal.querySelector('.artdeco-button--primary') ||
+                                document.querySelector('.share-actions__primary-action');
                             if (!pubBtn) {
-                                pubBtn = await waitForElement('.share-actions__primary-action', modal);
+                                pubBtn = await waitForElement('.share-actions__primary-action', modal, 20, 500);
+                            }
+                            if (!pubBtn) {
+                                pubBtn = await waitForElement('button[aria-label*="publier" i], button[aria-label*="post" i]', modal, 20, 500);
                             }
                             if (pubBtn) forceClick(pubBtn);
                         }
