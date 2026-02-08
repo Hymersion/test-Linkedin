@@ -1,6 +1,6 @@
 document.addEventListener('DOMContentLoaded', () => {
 
-    const map = { 'nav_id': 'tab_id', 'nav_com': 'tab_com', 'nav_radar': 'tab_radar', 'nav_post': 'tab_post', 'nav_queue': 'tab_queue' };
+    const map = { 'nav_id': 'tab_id', 'nav_com': 'tab_com', 'nav_radar': 'tab_radar', 'nav_post': 'tab_post', 'nav_queue': 'tab_queue', 'nav_reseau': 'tab_reseau' };
     Object.keys(map).forEach(navId => {
         document.getElementById(navId).addEventListener('click', () => {
             document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
@@ -8,6 +8,10 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById(navId).classList.add('active');
             document.getElementById(map[navId]).classList.add('active');
             if(navId === 'nav_queue') loadQueue();
+            if(navId === 'nav_reseau') {
+                loadTargets();
+                loadOpportunities();
+            }
         });
     });
 
@@ -29,13 +33,13 @@ document.addEventListener('DOMContentLoaded', () => {
     function nav(key, url, cb) {
         chrome.tabs.query({active:true, currentWindow:true}, async t => {
             if(t[0].url.includes(key)) {
-                await chrome.scripting.executeScript({target:{tabId:t[0].id}, files:['content.js']});
+                await chrome.scripting.executeScript({target:{tabId:t[0].id}, files:['selectors.js', 'content.js']});
                 cb(t[0].id);
             } else {
                 alert("Redirection...");
                 await chrome.tabs.update(t[0].id, {url: url});
                 setTimeout(async()=>{
-                    await chrome.scripting.executeScript({target:{tabId:t[0].id}, files:['content.js']});
+                    await chrome.scripting.executeScript({target:{tabId:t[0].id}, files:['selectors.js', 'content.js']});
                     cb(t[0].id);
                 }, 4000);
             }
@@ -250,6 +254,119 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
             if (apiStatus) apiStatus.textContent = "Connexion OK.";
+        });
+    });
+
+    const scanStatus = document.getElementById('scan_status');
+    const toggleWatch = document.getElementById('toggle_watch');
+    const inputInterval = document.getElementById('input_interval');
+    const inputMaxTargets = document.getElementById('input_max_targets');
+    const inputThreshold = document.getElementById('input_threshold');
+    const toggleManual = document.getElementById('toggle_manual');
+    const targetsList = document.getElementById('targets_list');
+    const opportunitiesList = document.getElementById('opportunities_list');
+
+    const loadTargets = () => {
+        chrome.runtime.sendMessage({ action: "FETCH_TARGETS" }, res => {
+            if (!res || !res.success) return;
+            targetsList.innerHTML = "";
+            res.targets.forEach(t => {
+                const div = document.createElement('div');
+                div.className = 'card';
+                div.innerHTML = `<b>${t.fullName || t.profileUrl}</b><br><span class="muted">${t.headline || ""}</span><br><span class="muted">Dernier check: ${t.lastCheckedAt ? new Date(t.lastCheckedAt).toLocaleString() : "Jamais"}</span>`;
+                targetsList.appendChild(div);
+            });
+        });
+        chrome.storage.local.get(['watchSettings', 'objectives'], r => {
+            const settings = r.watchSettings || {};
+            toggleWatch.checked = !!settings.enabled;
+            inputInterval.value = settings.checkIntervalMinutes || 30;
+            inputMaxTargets.value = settings.maxTargetsPerCycle || 5;
+            inputThreshold.value = settings.scoreThreshold || 60;
+            toggleManual.checked = settings.requireManualApproval !== false;
+            const objectives = r.objectives || {};
+            document.getElementById('input_goals').value = objectives.goals || "";
+            document.getElementById('input_tone').value = objectives.toneRules || "";
+        });
+    };
+
+    const loadOpportunities = () => {
+        chrome.runtime.sendMessage({ action: "FETCH_OPPORTUNITIES" }, res => {
+            if (!res || !res.success) return;
+            opportunitiesList.innerHTML = "";
+            res.opportunities.forEach(o => {
+                const div = document.createElement('div');
+                div.className = 'card';
+                div.innerHTML = `
+                    <div><b>Score:</b> ${o.score}</div>
+                    <div class="muted">${o.postText.substring(0, 120)}...</div>
+                    <textarea style="width:100%">${o.draftComment || ""}</textarea>
+                    <button class="btn-secondary" data-id="${o.id}" data-link="${o.postPermalink}">Open Post</button>
+                    <button class="btn-success" data-publish="${o.id}">Publish Comment</button>
+                    <button class="btn-danger" data-dismiss="${o.id}">Dismiss</button>
+                `;
+                opportunitiesList.appendChild(div);
+            });
+            opportunitiesList.querySelectorAll('button[data-link]').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    const link = e.currentTarget.dataset.link;
+                    if (link) chrome.tabs.create({ url: link });
+                });
+            });
+            opportunitiesList.querySelectorAll('button[data-dismiss]').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    const id = Number(e.currentTarget.dataset.dismiss);
+                    chrome.runtime.sendMessage({ action: "DISMISS_OPPORTUNITY", id }, () => loadOpportunities());
+                });
+            });
+            opportunitiesList.querySelectorAll('button[data-publish]').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    const id = Number(e.currentTarget.dataset.publish);
+                    chrome.runtime.sendMessage({ action: "PUBLISH_OPPORTUNITY", id }, () => loadOpportunities());
+                });
+            });
+        });
+    };
+
+    document.getElementById('btn_scan_targets').addEventListener('click', () => {
+        const url = document.getElementById('input_search_url').value.trim();
+        if (!url) return;
+        if (scanStatus) scanStatus.textContent = "Scan en cours...";
+        chrome.runtime.sendMessage({ action: "SCAN_TARGETS_FROM_SEARCH", searchUrl: url }, res => {
+            if (scanStatus) scanStatus.textContent = res && res.success ? "Scan terminé." : "Échec du scan.";
+            loadTargets();
+        });
+    });
+
+    document.getElementById('btn_add_target').addEventListener('click', () => {
+        const url = document.getElementById('input_profile_url').value.trim();
+        if (!url) return;
+        chrome.runtime.sendMessage({ action: "ADD_TARGET", profileUrl: url }, res => {
+            if (scanStatus) scanStatus.textContent = res && res.success ? "Cible ajoutée." : "Cible non ajoutée.";
+            loadTargets();
+        });
+    });
+
+    document.getElementById('btn_save_watch').addEventListener('click', () => {
+        const settings = {
+            enabled: toggleWatch.checked,
+            checkIntervalMinutes: Number(inputInterval.value || 30),
+            maxTargetsPerCycle: Number(inputMaxTargets.value || 5),
+            scoreThreshold: Number(inputThreshold.value || 60),
+            requireManualApproval: toggleManual.checked
+        };
+        chrome.runtime.sendMessage({ action: "UPDATE_WATCH_SETTINGS", settings }, () => {
+            chrome.runtime.sendMessage({ action: "TOGGLE_WATCH", enabled: settings.enabled });
+        });
+    });
+
+    document.getElementById('btn_save_objectives').addEventListener('click', () => {
+        const objectives = {
+            goals: document.getElementById('input_goals').value,
+            toneRules: document.getElementById('input_tone').value
+        };
+        chrome.runtime.sendMessage({ action: "UPDATE_OBJECTIVES", objectives }, () => {
+            if (scanStatus) scanStatus.textContent = "Objectifs sauvegardés.";
         });
     });
 });

@@ -2,6 +2,8 @@ if (!window.ghostlyLoaded) {
     window.ghostlyLoaded = true;
     console.log("👻 Ghostly V127 Loaded");
 
+    const SELECTORS = window.GHOSTLY_SELECTORS || {};
+
     const log = (msg) => {
         console.log(`[GHOSTLY] ${msg}`);
         let box = document.getElementById('g-log');
@@ -62,6 +64,70 @@ if (!window.ghostlyLoaded) {
     };
 
     const normalize = (str) => str.replace(/\s+/g, ' ').trim().toLowerCase();
+
+    const isLoggedOut = () => {
+        return !!document.querySelector(SELECTORS.loginField || 'input[name="session_key"]');
+    };
+
+    const parseRecency = (label) => {
+        if (!label) return null;
+        const text = label.trim().toLowerCase();
+        const match = text.match(/(\d+)\s*(s|m|h|d|w|sem|mo|yr|an|ans)/);
+        if (!match) return null;
+        const value = Number(match[1]);
+        const unit = match[2];
+        const secondsMap = { s: 1, m: 60, h: 3600, d: 86400, w: 604800, sem: 604800, mo: 2592000, yr: 31536000, an: 31536000, ans: 31536000 };
+        return value * (secondsMap[unit] || 0);
+    };
+
+    const scrapeSearchResultsCandidates = () => {
+        if (isLoggedOut()) {
+            return { success: false, error: "NOT_LOGGED_IN", candidates: [] };
+        }
+        const cards = Array.from(document.querySelectorAll(SELECTORS.searchResultCard || 'li'));
+        const seen = new Set();
+        const candidates = [];
+        cards.forEach(card => {
+            const link = card.querySelector(SELECTORS.profileLink || 'a[href*="/in/"]');
+            if (!link) return;
+            const href = link.href || "";
+            if (!href.includes("/in/")) return;
+            const profileUrl = href.split('?')[0];
+            if (seen.has(profileUrl)) return;
+            seen.add(profileUrl);
+            const nameEl = card.querySelector(SELECTORS.fullName || 'span[aria-hidden="true"]');
+            const headlineEl = card.querySelector(SELECTORS.headline || '.entity-result__primary-subtitle');
+            candidates.push({
+                profileUrl,
+                fullName: nameEl ? nameEl.innerText.trim() : "",
+                headline: headlineEl ? headlineEl.innerText.trim() : ""
+            });
+        });
+        return { success: true, candidates };
+    };
+
+    const scrapeLatestPostFromProfile = () => {
+        if (isLoggedOut()) {
+            return { success: false, error: "NOT_LOGGED_IN" };
+        }
+        const containers = Array.from(document.querySelectorAll(SELECTORS.profilePostContainer || '[data-urn]'))
+            .filter(el => {
+                const urn = el.getAttribute('data-urn') || "";
+                return urn.includes('activity') || urn.includes('ugcPost');
+            });
+        if (!containers.length) {
+            return { success: true, postUrn: "", postText: "", recencySecondsEstimate: null, postPermalink: "" };
+        }
+        const el = containers[0];
+        const postUrn = el.getAttribute('data-urn');
+        const textEl = el.querySelector(SELECTORS.postText || 'span[dir="ltr"]');
+        const postText = textEl ? textEl.innerText.trim().slice(0, 600) : (el.innerText || "").trim().slice(0, 600);
+        const recencyEl = el.querySelector(SELECTORS.recencyLabel || 'time');
+        const recencySecondsEstimate = parseRecency(recencyEl ? recencyEl.innerText : "");
+        const link = el.querySelector('a[href*="/posts/"], a[href*="/activity/"]');
+        const postPermalink = link ? link.href.split('?')[0] : "";
+        return { success: true, postUrn, postText, recencySecondsEstimate, postPermalink };
+    };
 
     chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         
@@ -306,6 +372,18 @@ if (!window.ghostlyLoaded) {
                 }
                 sendResponse({ success: false });
             })();
+            return true;
+        }
+
+        if (request.action === "SCRAPE_SEARCH_RESULTS") {
+            const result = scrapeSearchResultsCandidates();
+            sendResponse(result);
+            return true;
+        }
+
+        if (request.action === "SCRAPE_LATEST_POST") {
+            const result = scrapeLatestPostFromProfile();
+            sendResponse(result);
             return true;
         }
         

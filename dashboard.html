@@ -154,6 +154,7 @@
     <button class="nav-btn" id="nav_com">Réponses</button>
     <button class="nav-btn" id="nav_post">Éditeur</button>
     <button class="nav-btn" id="nav_queue">Planning</button>
+    <button class="nav-btn" id="nav_reseau">RÉSEAU</button>
   </div>
   
   <div class="main">
@@ -216,6 +217,51 @@
         <div class="section">
             <button id="btn_refresh_queue" class="btn-secondary">Rafraîchir</button>
             <div id="list_queue"></div>
+        </div>
+    </div>
+    <div id="tab_reseau" class="tab">
+        <h3>RÉSEAU</h3>
+        <div class="section">
+            <h4>Chasse</h4>
+            <label for="input_search_url">URL Recherche LinkedIn</label>
+            <input id="input_search_url" placeholder="https://www.linkedin.com/search/results/people/...">
+            <button id="btn_scan_targets" class="btn-accent">Scan & Qualify</button>
+            <label for="input_profile_url">Ajouter un profil</label>
+            <input id="input_profile_url" placeholder="https://www.linkedin.com/in/...">
+            <button id="btn_add_target" class="btn-secondary">Add Target</button>
+            <div id="scan_status" class="muted"></div>
+        </div>
+        <div class="section">
+            <h4>Radar</h4>
+            <div class="row">
+                <label><input type="checkbox" id="toggle_watch"> Activer</label>
+                <label>Intervalle (min)
+                    <input type="number" id="input_interval" min="10" value="30">
+                </label>
+            </div>
+            <div class="row">
+                <label>Max cibles/cycle
+                    <input type="number" id="input_max_targets" min="1" value="5">
+                </label>
+                <label>Seuil score
+                    <input type="number" id="input_threshold" min="0" max="100" value="60">
+                </label>
+            </div>
+            <label><input type="checkbox" id="toggle_manual"> Approbation manuelle</label>
+            <button id="btn_save_watch" class="btn-secondary">Enregistrer</button>
+            <div id="targets_list"></div>
+        </div>
+        <div class="section">
+            <h4>Opportunités</h4>
+            <div id="opportunities_list"></div>
+        </div>
+        <div class="section">
+            <h4>Objectifs Stratégiques</h4>
+            <label for="input_goals">Objectifs</label>
+            <textarea id="input_goals" style="height:80px;"></textarea>
+            <label for="input_tone">Règles de ton</label>
+            <textarea id="input_tone" style="height:60px;"></textarea>
+            <button id="btn_save_objectives" class="btn-secondary">Sauvegarder</button>
         </div>
     </div>
   </div>
