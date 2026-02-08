@@ -28,6 +28,23 @@ if (!window.ghostlyLoaded) {
         return true;
     };
 
+    const findSubmitButton = (container) => {
+        if (!container) return null;
+        return container.querySelector('.artdeco-button--primary') ||
+               container.querySelector('button[type="submit"]') ||
+               container.querySelector('button[aria-label*="Publier"]') ||
+               container.querySelector('button[aria-label*="Post"]');
+    };
+
+    const waitForElement = async (selector, ctx = document, attempts = 12, delay = 400) => {
+        for (let i = 0; i < attempts; i++) {
+            const el = ctx.querySelector(selector);
+            if (el) return el;
+            await new Promise(r => setTimeout(r, delay));
+        }
+        return null;
+    };
+
     const securePaste = async (editor, text) => {
         editor.focus();
         document.execCommand('selectAll', false, null);
@@ -121,24 +138,31 @@ if (!window.ghostlyLoaded) {
                     
                     if(btn) { 
                         btn.click(); 
-                        await new Promise(r => setTimeout(r, 1500)); 
+                        await new Promise(r => setTimeout(r, 1200)); 
                         
                         // 2. Ecrire
-                        const ed = el.querySelector('[contenteditable="true"]') || el.querySelector('.ql-editor');
+                        const ed = el.querySelector('[contenteditable="true"]') ||
+                                   el.querySelector('.ql-editor') ||
+                                   await waitForElement('[contenteditable="true"]', el);
                         if(ed){ 
                             await securePaste(ed, request.text);
                             
                             // 3. Publier (Recherche Locale)
                             // On cherche le bouton DANS le conteneur du commentaire
-                            const container = ed.closest('form') || ed.closest('.comments-comment-box');
+                            const container = ed.closest('form') || ed.closest('.comments-comment-box') || el;
                             
                             if (container) {
-                                let submit = container.querySelector('.artdeco-button--primary') || 
-                                             container.querySelector('button[type="submit"]');
+                                let submit = findSubmitButton(container);
                                 
                                 if (!submit) { // Fallback texte
                                     const txtSubmit = findByText('span', ['publier', 'post'], container);
                                     if(txtSubmit) submit = txtSubmit.closest('button');
+                                }
+
+                                if(!submit) submit = findSubmitButton(document);
+                                if(!submit) {
+                                    const globalTxt = findByText('span', ['publier', 'post'], document);
+                                    if (globalTxt) submit = globalTxt.closest('button');
                                 }
 
                                 if(submit) {
@@ -215,14 +239,21 @@ if (!window.ghostlyLoaded) {
 
                     if (btn) {
                         btn.click(); await new Promise(r => setTimeout(r, 1500));
-                        const ed = targetEl.querySelector('.ql-editor') || targetEl.querySelector('[contenteditable="true"]');
+                        const ed = targetEl.querySelector('.ql-editor') ||
+                                   targetEl.querySelector('[contenteditable="true"]') ||
+                                   await waitForElement('[contenteditable="true"]', targetEl);
                         if (ed) {
                             await securePaste(ed, request.replyText);
-                            const form = ed.closest('form');
-                            let submit = form ? (form.querySelector('.artdeco-button--primary') || form.querySelector('button[type="submit"]')) : null;
+                            const form = ed.closest('form') || targetEl;
+                            let submit = form ? findSubmitButton(form) : null;
+                            if(!submit) {
+                                const txtSubmit = findByText('span', ['publier', 'post'], form || targetEl);
+                                if(txtSubmit) submit = txtSubmit.closest('button');
+                            }
+                            if(!submit) submit = findSubmitButton(document);
                             if (submit) { forceClick(submit); sendResponse({success:true}); return; }
-                        }
                     }
+                }
                 }
                 sendResponse({success:false});
             })();
@@ -275,16 +306,16 @@ if (!window.ghostlyLoaded) {
                 };
 
                 try {
-                    const name = getText(pick('h1'));
-                    const headline = getText(pick('.text-body-medium.break-words', 'div.ph5 .text-body-medium', '.pv-text-details__left-panel .text-body-medium'));
-                    const location = getText(pick('.text-body-small.inline.t-black--light.break-words', '.pv-text-details__left-panel .text-body-small'));
+                    const name = getText(pick('h1.text-heading-xlarge', 'h1'));
+                    const headline = getText(pick('.text-body-medium.break-words', '.pv-text-details__left-panel .text-body-medium', '.text-body-medium.t-black'));
+                    const location = getText(pick('.text-body-small.inline.t-black--light.break-words', '.pv-text-details__left-panel .text-body-small', '.text-body-small.inline'));
 
-                    const aboutSection = findSectionByHeading(['à propos', 'about']);
+                    const aboutSection = findSectionByHeading(['à propos', 'about']) || document.querySelector('section[data-section="summary"]');
                     const about = aboutSection
                         ? getText(aboutSection.querySelector('.pv-shared-text-with-see-more, .inline-show-more-text, span[aria-hidden="true"]'))
                         : "";
 
-                    const expSection = findSectionByHeading(['expérience', 'experience']);
+                    const expSection = findSectionByHeading(['expérience', 'experience']) || document.querySelector('section[data-section="experience"]');
                     const firstRole = expSection
                         ? getText(expSection.querySelector('.pvs-entity__path-node, .pvs-entity__primary-title, .t-14.t-normal'))
                         : "";
