@@ -147,16 +147,13 @@ document.addEventListener('DOMContentLoaded', () => {
             const div = document.getElementById('zone_ideas'); div.innerHTML="";
             r.ideas.split('###').forEach(i => {
                 const b = document.createElement('button'); b.innerText = i.split('|||')[0]; b.style.background="#eee"; b.style.color="black";
-                b.onclick = () => {
+                    b.onclick = () => {
                     document.getElementById('input_final').value = "Rédaction...";
                     chrome.runtime.sendMessage({action:"WRITE_FINAL_POST", angle:i, persona:promptBox.value}, res => {
-<<<<<<< HEAD
-=======
                         if (res && res.error) {
                             alert(res.error);
                             return;
                         }
->>>>>>> codex/activer-cle-secrete-pour-fonctionnalites-76k82j
                         document.getElementById('input_final').value = res.post;
                     });
                 };
