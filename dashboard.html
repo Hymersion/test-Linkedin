@@ -140,6 +140,7 @@
     .btn-success{background:var(--success);}
     .btn-danger{background:var(--danger);}
     .btn-accent{background:var(--accent);}
+    .input-muted{font-size:11px;color:var(--muted);margin-top:4px;}
     .muted{color:var(--muted);font-size:12px;}
     .row{display:flex;gap:8px;}
     .row > *{flex:1;}
@@ -176,6 +177,14 @@
             <label for="prompt_box">Persona</label>
             <textarea id="prompt_box" style="height:120px;"></textarea>
             <button id="btn_save">Sauver</button>
+        </div>
+        <div class="section">
+            <label for="input_api_key">Clé OpenAI</label>
+            <input id="input_api_key" type="password" placeholder="sk-..." autocomplete="off">
+            <div class="input-muted">Stockée localement dans l’extension.</div>
+            <button id="btn_save_api" class="btn-secondary">Enregistrer la clé</button>
+            <button id="btn_test_api" class="btn-accent">Tester la connexion</button>
+            <div id="api_status" class="muted"></div>
         </div>
     </div>
     <div id="tab_com" class="tab">

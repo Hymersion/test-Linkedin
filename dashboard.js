@@ -19,6 +19,13 @@ document.addEventListener('DOMContentLoaded', () => {
         if (promptBox) promptBox.value = r.persona || "Expert.";
     });
 
+    const apiKeyInput = document.getElementById('input_api_key');
+    const apiStatus = document.getElementById('api_status');
+
+    chrome.storage.local.get(['openaiApiKey'], r => {
+        if (apiKeyInput) apiKeyInput.value = r.openaiApiKey || "";
+    });
+
     function nav(key, url, cb) {
         chrome.tabs.query({active:true, currentWindow:true}, async t => {
             if(t[0].url.includes(key)) {
@@ -225,4 +232,22 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
     document.getElementById('btn_save').addEventListener('click', () => chrome.storage.local.set({persona:promptBox.value}, ()=>alert("Sauvé")));
+
+    document.getElementById('btn_save_api').addEventListener('click', () => {
+        const apiKey = apiKeyInput.value.trim();
+        chrome.runtime.sendMessage({ action: "SET_OPENAI_KEY", apiKey }, () => {
+            if (apiStatus) apiStatus.textContent = apiKey ? "Clé enregistrée." : "Clé supprimée.";
+        });
+    });
+
+    document.getElementById('btn_test_api').addEventListener('click', () => {
+        if (apiStatus) apiStatus.textContent = "Test en cours...";
+        chrome.runtime.sendMessage({ action: "TEST_OPENAI" }, res => {
+            if (!res || res.success === false) {
+                if (apiStatus) apiStatus.textContent = "Échec de connexion.";
+                return;
+            }
+            if (apiStatus) apiStatus.textContent = "Connexion OK.";
+        });
+    });
 });

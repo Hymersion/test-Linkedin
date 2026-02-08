@@ -1,5 +1,20 @@
-const API_KEY = "";
 const QUEUE_ALARM = "ghostly-post-queue";
+const API_KEY_STORAGE_KEY = "openaiApiKey";
+
+let cachedApiKey = null;
+let cacheLoaded = false;
+
+const getApiKey = () => new Promise(resolve => {
+    if (cacheLoaded) {
+        resolve(cachedApiKey || "");
+        return;
+    }
+    chrome.storage.local.get([API_KEY_STORAGE_KEY], r => {
+        cachedApiKey = r[API_KEY_STORAGE_KEY] || "";
+        cacheLoaded = true;
+        resolve(cachedApiKey);
+    });
+});
 
 const getQueue = () => new Promise(resolve => {
     chrome.storage.local.get(['postQueue'], r => resolve(r.postQueue || []));
@@ -10,12 +25,13 @@ const setQueue = (queue) => new Promise(resolve => {
 });
 
 const fetchOpenAI = async (payload) => {
-    if (!API_KEY) {
+    const apiKey = await getApiKey();
+    if (!apiKey) {
         return { ok: false, data: null, error: "OpenAI API key missing" };
     }
     const r = await fetch("https://api.openai.com/v1/chat/completions", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${API_KEY}` },
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
         body: JSON.stringify(payload)
     });
     let data = null;
@@ -98,6 +114,33 @@ function clean(text) {
 }
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.action === "SET_OPENAI_KEY") {
+      cachedApiKey = request.apiKey || "";
+      cacheLoaded = true;
+      chrome.storage.local.set({ [API_KEY_STORAGE_KEY]: cachedApiKey }, () => {
+          sendResponse({ success: true });
+      });
+      return true;
+  }
+  if (request.action === "TEST_OPENAI") {
+      (async () => {
+          try {
+              const { ok, data, error } = await fetchOpenAI({
+                  model: "gpt-4o-mini",
+                  messages: [{ role: "user", content: "Test ping." }],
+                  temperature: 0
+              });
+              if (!ok) throw new Error(error);
+              const content = data && data.choices && data.choices[0] && data.choices[0].message
+                  ? data.choices[0].message.content
+                  : "";
+              sendResponse({ success: true, message: content || "OK" });
+          } catch (e) {
+              sendResponse({ success: false, error: "Erreur IA" });
+          }
+      })();
+      return true;
+  }
   // RADAR
   if (request.action === "ANALYZE_FEED_MANUAL") {
       (async () => {
@@ -207,6 +250,14 @@ chrome.runtime.onInstalled.addListener(() => {
 
 chrome.runtime.onStartup.addListener(() => {
     ensureQueueProcessing();
+});
+
+chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName !== "local") return;
+    if (Object.prototype.hasOwnProperty.call(changes, API_KEY_STORAGE_KEY)) {
+        cachedApiKey = changes[API_KEY_STORAGE_KEY].newValue || "";
+        cacheLoaded = true;
+    }
 });
 
 chrome.alarms.onAlarm.addListener((alarm) => {
