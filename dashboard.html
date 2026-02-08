@@ -3,66 +3,219 @@
 <head>
   <meta charset="UTF-8">
   <style>
-    body{font-family:sans-serif;margin:0;display:flex;height:600px;width:500px;}
-    .sidebar{width:100px;background:#f0f0f0;padding:10px;}
-    .main{flex:1;padding:10px;overflow-y:auto;}
-    .nav-btn{width:100%;padding:10px;margin-bottom:5px;border:none;cursor:pointer;text-align:left;}
-    .nav-btn.active{background:#0073b1;color:white;}
-    .tab{display:none;} .tab.active{display:block;}
-    button{width:100%;padding:8px;margin-top:5px;cursor:pointer;background:#0073b1;color:white;border:none;}
-    textarea,input{width:100%;box-sizing:border-box;margin-bottom:5px;}
-    .card{border:1px solid #ccc;padding:8px;margin-bottom:8px;background:#fff;font-size:12px;}
-    .queue-item{border-left:4px solid orange; padding:5px; margin-bottom:5px; background:#fff;}
+    :root{
+      color-scheme:light;
+      --bg:#f6f7fb;
+      --surface:#ffffff;
+      --text:#1f2a44;
+      --muted:#6b768a;
+      --primary:#0a66c2;
+      --primary-dark:#084a8a;
+      --accent:#e67e22;
+      --success:#1f9d55;
+      --warning:#e67e22;
+      --danger:#d94841;
+      --border:#e0e6ef;
+      --shadow:0 8px 24px rgba(31,42,68,.12);
+      --radius:12px;
+    }
+    *{box-sizing:border-box;}
+    body{
+      font-family:"Inter","Segoe UI",system-ui,-apple-system,sans-serif;
+      margin:0;
+      display:flex;
+      height:600px;
+      width:520px;
+      background:var(--bg);
+      color:var(--text);
+    }
+    .sidebar{
+      width:140px;
+      background:var(--surface);
+      padding:16px 12px;
+      border-right:1px solid var(--border);
+      display:flex;
+      flex-direction:column;
+      gap:12px;
+    }
+    .logo{
+      font-weight:700;
+      font-size:14px;
+      letter-spacing:.5px;
+      text-transform:uppercase;
+      color:var(--primary);
+      margin-bottom:4px;
+    }
+    .nav{
+      display:flex;
+      flex-direction:column;
+      gap:6px;
+    }
+    .nav-btn{
+      width:100%;
+      padding:10px 12px;
+      border:none;
+      border-radius:10px;
+      background:transparent;
+      cursor:pointer;
+      text-align:left;
+      color:var(--muted);
+      font-weight:600;
+      transition:background .2s ease,color .2s ease;
+    }
+    .nav-btn:hover{background:#f1f5fb;color:var(--text);}
+    .nav-btn.active{background:rgba(10,102,194,.12);color:var(--primary);}
+    .main{
+      flex:1;
+      padding:16px 18px;
+      overflow-y:auto;
+      display:flex;
+      flex-direction:column;
+      gap:16px;
+    }
+    .page-header{
+      display:flex;
+      flex-direction:column;
+      gap:4px;
+    }
+    .page-header h2{margin:0;font-size:18px;}
+    .page-header p{margin:0;font-size:12px;color:var(--muted);}
+    .panel{
+      background:var(--surface);
+      border-radius:var(--radius);
+      padding:14px;
+      box-shadow:var(--shadow);
+      border:1px solid var(--border);
+    }
+    .tab{display:none;}
+    .tab.active{display:block;}
+    h3{margin:0 0 10px;font-size:16px;}
+    .field-label{font-size:12px;color:var(--muted);margin-bottom:4px;display:block;}
+    textarea,input{
+      width:100%;
+      padding:8px 10px;
+      border:1px solid var(--border);
+      border-radius:8px;
+      margin-bottom:8px;
+      font-size:12px;
+      background:#fbfcff;
+    }
+    textarea:focus,input:focus{
+      outline:none;
+      border-color:var(--primary);
+      box-shadow:0 0 0 3px rgba(10,102,194,.15);
+    }
+    .btn{
+      width:100%;
+      padding:8px 10px;
+      margin-top:6px;
+      cursor:pointer;
+      border:none;
+      border-radius:8px;
+      font-weight:600;
+      font-size:12px;
+      transition:transform .1s ease, box-shadow .2s ease;
+    }
+    .btn:hover{transform:translateY(-1px);box-shadow:0 6px 16px rgba(31,42,68,.15);}
+    .btn.primary{background:var(--primary);color:white;}
+    .btn.primary:hover{background:var(--primary-dark);}
+    .btn.warning{background:var(--warning);color:white;}
+    .btn.success{background:var(--success);color:white;}
+    .btn.danger{background:var(--danger);color:white;}
+    .btn.ghost{background:#f1f5fb;color:var(--text);}
+    .card{
+      border:1px solid var(--border);
+      padding:10px;
+      margin-bottom:8px;
+      background:#fbfcff;
+      font-size:12px;
+      border-radius:10px;
+    }
+    .queue-item{
+      border-left:4px solid var(--warning);
+      padding:8px;
+      margin-bottom:6px;
+      background:#fff7ef;
+      border-radius:8px;
+      font-size:12px;
+    }
+    .stack{display:flex;flex-direction:column;gap:8px;}
+    .split{
+      display:grid;
+      grid-template-columns:1fr;
+      gap:10px;
+    }
   </style>
 </head>
 <body>
-  <div class="sidebar">
-    <button class="nav-btn active" id="nav_radar" style="color:#d35400;">Radar</button>
-    <button class="nav-btn" id="nav_id">Identité</button>
-    <button class="nav-btn" id="nav_com">Réponses</button>
-    <button class="nav-btn" id="nav_post">Éditeur</button>
-    <button class="nav-btn" id="nav_queue" style="color:green;">Planning</button>
-  </div>
+  <aside class="sidebar">
+    <div class="logo">Pulse UI</div>
+    <nav class="nav">
+      <button class="nav-btn active" id="nav_radar">Radar</button>
+      <button class="nav-btn" id="nav_id">Identité</button>
+      <button class="nav-btn" id="nav_com">Réponses</button>
+      <button class="nav-btn" id="nav_post">Éditeur</button>
+      <button class="nav-btn" id="nav_queue">Planning</button>
+    </nav>
+  </aside>
   
-  <div class="main">
-    <div id="tab_radar" class="tab active">
+  <main class="main">
+    <div class="page-header">
+      <h2>Tableau de bord</h2>
+      <p>Pilotez vos actions LinkedIn avec une interface claire et professionnelle.</p>
+    </div>
+    <div id="tab_radar" class="tab active panel">
         <h3>Radar</h3>
-        <input type="number" id="input_scroll" value="20">
-        <button id="btn_scan_radar" style="background:#d35400;">Lancer Radar</button>
+        <div class="stack">
+          <div>
+            <label class="field-label" for="input_scroll">Profondeur de scan</label>
+            <input type="number" id="input_scroll" value="20">
+          </div>
+          <button class="btn warning" id="btn_scan_radar">Lancer Radar</button>
+        </div>
         <div id="zone_radar" style="display:none; margin-top:10px;">
-            <div id="list_radar"></div>
-            <button id="btn_pub_radar" style="background:green;">Publier Sélection</button>
+            <div id="list_radar" class="stack"></div>
+            <button class="btn success" id="btn_pub_radar">Publier Sélection</button>
         </div>
     </div>
-    <div id="tab_id" class="tab">
+    <div id="tab_id" class="tab panel">
         <h3>Identité</h3>
-        <button id="btn_scan_profile">Scanner Profil</button>
-        <textarea id="prompt_box" style="height:100px;"></textarea>
-        <button id="btn_save">Sauver</button>
+        <div class="stack">
+          <button class="btn primary" id="btn_scan_profile">Scanner Profil</button>
+          <textarea id="prompt_box" style="height:110px;" placeholder="Décrivez votre ton, votre expertise et vos objectifs..."></textarea>
+          <button class="btn primary" id="btn_save">Sauver</button>
+        </div>
     </div>
-    <div id="tab_com" class="tab">
+    <div id="tab_com" class="tab panel">
         <h3>Post Unique</h3>
-        <input id="input_url" placeholder="URL du post...">
-        <button id="btn_scan_post">Scanner le post</button>
-        <div id="zone_coms"></div>
-        <button id="btn_pub_all" style="background:green;display:none;">Publier Tout</button>
+        <div class="stack">
+          <input id="input_url" placeholder="URL du post...">
+          <button class="btn primary" id="btn_scan_post">Scanner le post</button>
+          <div id="zone_coms" class="stack"></div>
+          <button class="btn success" id="btn_pub_all" style="display:none;">Publier Tout</button>
+        </div>
     </div>
-    <div id="tab_post" class="tab">
+    <div id="tab_post" class="tab panel">
         <h3>Éditeur</h3>
-        <button id="btn_ideas">Générer Idées</button>
-        <div id="zone_ideas"></div>
-        <textarea id="input_final" style="height:150px;"></textarea>
-        <hr>
-        <input type="datetime-local" id="schedule_time">
-        <button id="btn_add_queue" style="background:orange;">Mettre en File</button>
-        <button id="btn_pub_now" style="background:red;">Publier Maintenant</button>
+        <div class="stack">
+          <button class="btn primary" id="btn_ideas">Générer Idées</button>
+          <div id="zone_ideas" class="stack"></div>
+          <textarea id="input_final" style="height:150px;" placeholder="Rédigez ici votre post final..."></textarea>
+          <div class="split">
+            <input type="datetime-local" id="schedule_time">
+            <button class="btn warning" id="btn_add_queue">Mettre en File</button>
+          </div>
+          <button class="btn danger" id="btn_pub_now">Publier Maintenant</button>
+        </div>
     </div>
-    <div id="tab_queue" class="tab">
+    <div id="tab_queue" class="tab panel">
         <h3>File d'attente</h3>
-        <button id="btn_refresh_queue" style="background:#eee;color:black">Rafraîchir</button>
-        <div id="list_queue"></div>
+        <div class="stack">
+          <button class="btn ghost" id="btn_refresh_queue">Rafraîchir</button>
+          <div id="list_queue" class="stack"></div>
+        </div>
     </div>
-  </div>
+  </main>
   <script src="dashboard.js"></script>
 </body>
 </html>
