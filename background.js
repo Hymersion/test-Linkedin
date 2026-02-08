@@ -24,16 +24,21 @@ const setQueue = (queue) => new Promise(resolve => {
     chrome.storage.local.set({ postQueue: queue }, resolve);
 });
 
-const fetchOpenAI = async (payload) => {
-    const apiKey = await getApiKey();
+const fetchOpenAI = async (payload, apiKeyOverride) => {
+    const apiKey = apiKeyOverride || await getApiKey();
     if (!apiKey) {
         return { ok: false, data: null, error: "OpenAI API key missing" };
     }
-    const r = await fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
-        body: JSON.stringify(payload)
-    });
+    let r;
+    try {
+        r = await fetch("https://api.openai.com/v1/chat/completions", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
+            body: JSON.stringify(payload)
+        });
+    } catch (e) {
+        return { ok: false, data: null, error: "Network error" };
+    }
     let data = null;
     try {
         data = await r.json();
@@ -125,11 +130,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "TEST_OPENAI") {
       (async () => {
           try {
+              const overrideKey = request.apiKey ? request.apiKey.trim() : "";
               const { ok, data, error } = await fetchOpenAI({
                   model: "gpt-4o-mini",
                   messages: [{ role: "user", content: "Test ping." }],
                   temperature: 0
-              });
+              }, overrideKey);
               if (!ok) throw new Error(error);
               const content = data && data.choices && data.choices[0] && data.choices[0].message
                   ? data.choices[0].message.content

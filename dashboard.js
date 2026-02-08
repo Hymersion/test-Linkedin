@@ -242,7 +242,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     document.getElementById('btn_test_api').addEventListener('click', () => {
         if (apiStatus) apiStatus.textContent = "Test en cours...";
-        chrome.runtime.sendMessage({ action: "TEST_OPENAI" }, res => {
+        const apiKey = apiKeyInput.value.trim();
+        chrome.runtime.sendMessage({ action: "TEST_OPENAI", apiKey }, res => {
             if (!res || res.success === false) {
                 const message = res && res.error ? res.error : "Échec de connexion.";
                 if (apiStatus) apiStatus.textContent = message;
