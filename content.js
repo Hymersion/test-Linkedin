@@ -36,6 +36,15 @@ if (!window.ghostlyLoaded) {
                container.querySelector('button[aria-label*="Post"]');
     };
 
+    const waitForElement = async (selector, ctx = document, attempts = 12, delay = 400) => {
+        for (let i = 0; i < attempts; i++) {
+            const el = ctx.querySelector(selector);
+            if (el) return el;
+            await new Promise(r => setTimeout(r, delay));
+        }
+        return null;
+    };
+
     const securePaste = async (editor, text) => {
         editor.focus();
         document.execCommand('selectAll', false, null);
@@ -129,10 +138,12 @@ if (!window.ghostlyLoaded) {
                     
                     if(btn) { 
                         btn.click(); 
-                        await new Promise(r => setTimeout(r, 1500)); 
+                        await new Promise(r => setTimeout(r, 1200)); 
                         
                         // 2. Ecrire
-                        const ed = el.querySelector('[contenteditable="true"]') || el.querySelector('.ql-editor');
+                        const ed = el.querySelector('[contenteditable="true"]') ||
+                                   el.querySelector('.ql-editor') ||
+                                   await waitForElement('[contenteditable="true"]', el);
                         if(ed){ 
                             await securePaste(ed, request.text);
                             
@@ -148,8 +159,10 @@ if (!window.ghostlyLoaded) {
                                     if(txtSubmit) submit = txtSubmit.closest('button');
                                 }
 
+                                if(!submit) submit = findSubmitButton(document);
                                 if(!submit) {
-                                    submit = findSubmitButton(document);
+                                    const globalTxt = findByText('span', ['publier', 'post'], document);
+                                    if (globalTxt) submit = globalTxt.closest('button');
                                 }
 
                                 if(submit) {
@@ -226,16 +239,19 @@ if (!window.ghostlyLoaded) {
 
                     if (btn) {
                         btn.click(); await new Promise(r => setTimeout(r, 1500));
-                        const ed = targetEl.querySelector('.ql-editor') || targetEl.querySelector('[contenteditable="true"]');
+                        const ed = targetEl.querySelector('.ql-editor') ||
+                                   targetEl.querySelector('[contenteditable="true"]') ||
+                                   await waitForElement('[contenteditable="true"]', targetEl);
                         if (ed) {
                             await securePaste(ed, request.replyText);
-                        const form = ed.closest('form') || targetEl;
-                        let submit = form ? findSubmitButton(form) : null;
-                        if(!submit) {
-                            const txtSubmit = findByText('span', ['publier', 'post'], form || targetEl);
-                            if(txtSubmit) submit = txtSubmit.closest('button');
-                        }
-                        if (submit) { forceClick(submit); sendResponse({success:true}); return; }
+                            const form = ed.closest('form') || targetEl;
+                            let submit = form ? findSubmitButton(form) : null;
+                            if(!submit) {
+                                const txtSubmit = findByText('span', ['publier', 'post'], form || targetEl);
+                                if(txtSubmit) submit = txtSubmit.closest('button');
+                            }
+                            if(!submit) submit = findSubmitButton(document);
+                            if (submit) { forceClick(submit); sendResponse({success:true}); return; }
                     }
                 }
                 }
