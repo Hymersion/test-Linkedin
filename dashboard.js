@@ -50,6 +50,8 @@ const initDashboard = () => {
     const autoTargetsStart = document.getElementById('btn_auto_targets_start');
     const autoScheduleTimeButtons = document.querySelectorAll('[data-time]');
     const autoScheduleDayButtons = document.querySelectorAll('[data-day]');
+    const autoScheduleEvery = document.getElementById('auto_schedule_every');
+    const autoScheduleTimeSelect = document.getElementById('auto_schedule_time_select');
     const autoTabFeed = document.getElementById('auto_tab_feed');
     const autoTabFollowed = document.getElementById('auto_tab_followed');
     const radarTabSettings = document.getElementById('radar_tab_settings');
@@ -306,7 +308,8 @@ const initDashboard = () => {
     const scheduleState = {
         frequency: 'daily',
         time: '10:00',
-        days: new Set()
+        days: new Set(),
+        everyDays: '1'
     };
 
     if (autoScheduleDaily && autoScheduleWeekly) {
@@ -328,10 +331,26 @@ const initDashboard = () => {
         autoScheduleTimeButtons.forEach(btn => {
             btn.addEventListener('click', () => {
                 scheduleState.time = btn.getAttribute('data-time');
+                if (autoScheduleTimeSelect) autoScheduleTimeSelect.value = scheduleState.time;
                 setActiveButton(autoScheduleTimeButtons, scheduleState.time, 'data-time');
             });
         });
         setActiveButton(autoScheduleTimeButtons, scheduleState.time, 'data-time');
+    }
+
+    if (autoScheduleTimeSelect) {
+        autoScheduleTimeSelect.value = scheduleState.time;
+        autoScheduleTimeSelect.addEventListener('change', () => {
+            scheduleState.time = autoScheduleTimeSelect.value;
+            setActiveButton(autoScheduleTimeButtons, scheduleState.time, 'data-time');
+        });
+    }
+
+    if (autoScheduleEvery) {
+        autoScheduleEvery.value = scheduleState.everyDays;
+        autoScheduleEvery.addEventListener('change', () => {
+            scheduleState.everyDays = autoScheduleEvery.value;
+        });
     }
 
     if (autoScheduleDayButtons.length) {
@@ -353,7 +372,8 @@ const initDashboard = () => {
         autoTargetsStart.addEventListener('click', () => {
             const category = autoTargetsCategorySelect ? autoTargetsCategorySelect.value : 'all';
             const days = Array.from(scheduleState.days).join(', ') || 'tous';
-            setHunterStatus(`Planification: ${category} • ${scheduleState.frequency} • ${scheduleState.time} • ${days}`);
+            const cadence = `tous les ${scheduleState.everyDays} jours à ${scheduleState.time}`;
+            setHunterStatus(`Planification: ${category} • ${cadence} • ${scheduleState.frequency} • ${days}`);
         });
     }
 
