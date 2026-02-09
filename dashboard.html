@@ -187,6 +187,42 @@
             <input id="auto_feed_days" placeholder="Jours (ex: Lun, Mar, Mer)">
             <button class="btn-secondary" id="btn_auto_feed_start">Démarrer</button>
         </div>
+        <div class="section">
+            <h4>Auto commentaire des profils suivis</h4>
+            <label for="auto_targets_category_select">Catégorie suivie</label>
+            <select id="auto_targets_category_select">
+                <option value="all">Toutes les catégories</option>
+            </select>
+            <div class="row">
+                <button class="btn-secondary" id="auto_schedule_daily">1x / jour</button>
+                <button class="btn-secondary" id="auto_schedule_weekly">1x / semaine</button>
+            </div>
+            <div class="row">
+                <select id="auto_schedule_time">
+                    <option value="08:00">08:00</option>
+                    <option value="10:00">10:00</option>
+                    <option value="12:00">12:00</option>
+                    <option value="15:00">15:00</option>
+                    <option value="18:00">18:00</option>
+                </select>
+                <select id="auto_schedule_days" multiple>
+                    <option>Lun</option>
+                    <option>Mar</option>
+                    <option>Mer</option>
+                    <option>Jeu</option>
+                    <option>Ven</option>
+                </select>
+            </div>
+            <p class="muted">Choisissez la catégorie, la fréquence, l’heure et les jours.</p>
+        </div>
+        <div class="section">
+            <h4>Validation des commentaires</h4>
+            <div id="auto_comment_preview"></div>
+            <div class="row">
+                <button class="btn-secondary" id="btn_auto_comment_verify">Vérifier</button>
+                <button class="btn-success" id="btn_auto_comment_publish">Publier sélection</button>
+            </div>
+        </div>
         <div id="zone_radar" class="section" style="display:none;">
             <div id="list_radar"></div>
             <button id="btn_pub_radar" class="btn-success">Publier Sélection</button>
