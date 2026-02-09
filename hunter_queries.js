@@ -18,6 +18,11 @@ window.HUNTER_QUERIES = {
         "\"avocat\"",
         "\"juriste\"",
         "\"cabinet d'avocats\""
+    ],
+    "Médecins": [
+        "\"médecin\"",
+        "\"docteur\"",
+        "\"chirurgien\""
     ]
 };
 

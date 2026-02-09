@@ -249,6 +249,29 @@ const runHunter = async ({ url, category, settings, consentGiven }) => {
     };
 };
 
+const connectToProfile = async (profileUrl) => {
+    if (!profileUrl) return { success: false, error: "URL profil manquante." };
+    const tabId = await new Promise(resolve => {
+        chrome.tabs.create({ url: profileUrl, active: false }, tab => resolve(tab.id));
+    });
+    const waitForTabComplete = () => new Promise(resolve => {
+        const onUpdated = (updatedTabId, info) => {
+            if (updatedTabId === tabId && info.status === "complete") {
+                chrome.tabs.onUpdated.removeListener(onUpdated);
+                resolve();
+            }
+        };
+        chrome.tabs.onUpdated.addListener(onUpdated);
+    });
+    await waitForTabComplete();
+    await chrome.scripting.executeScript({ target: { tabId }, files: CONTENT_SCRIPT_FILES });
+    const result = await new Promise(resolve => {
+        chrome.tabs.sendMessage(tabId, { action: "CONNECT_PROFILE" }, resolve);
+    });
+    chrome.tabs.remove(tabId);
+    return result || { success: false, error: "Connexion non exécutée." };
+};
+
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   // RADAR
   if (request.action === "ANALYZE_FEED_MANUAL") {
@@ -384,6 +407,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           }));
           await setTargets(targets.concat(additions));
           sendResponse({ success: true, added: additions.length });
+      })();
+      return true;
+  }
+  if (request.action === "CONNECT_TARGET") {
+      (async () => {
+          const response = await connectToProfile(request.profileUrl);
+          sendResponse(response);
       })();
       return true;
   }

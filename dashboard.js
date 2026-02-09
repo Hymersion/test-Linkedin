@@ -28,6 +28,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const hunterCandidates = document.getElementById('hunter_candidates');
     const hunterUrl = document.getElementById('hunter_url');
     const hunterAddBtn = document.getElementById('btn_hunter_add');
+    const hunterTargets = document.getElementById('hunter_targets');
+    const hunterRefreshBtn = document.getElementById('btn_hunter_refresh');
     let FOUND_COMS = [];
     let RADAR_OPPS = [];
     let HUNTER_LAST_CANDIDATES = [];
@@ -125,8 +127,56 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     };
 
+    const renderTargets = (targets) => {
+        if (!hunterTargets) return;
+        hunterTargets.innerHTML = "";
+        if (!targets || targets.length === 0) {
+            hunterTargets.innerHTML = "<p class=\"muted\">Aucune cible enregistrée.</p>";
+            return;
+        }
+        targets.forEach((t, idx) => {
+            const row = document.createElement('div');
+            row.className = "card";
+            row.innerHTML = `
+                <div style="display:flex; justify-content:space-between; gap:8px;">
+                    <div>
+                        <b>${t.fullName || "Profil"}</b><br>
+                        <span class="muted">${t.headline || ""}</span><br>
+                        <span class="muted">Catégorie: ${t.category || "N/A"}</span><br>
+                        <a href="${t.profileUrl}" target="_blank" rel="noopener noreferrer">${t.profileUrl}</a>
+                    </div>
+                    <div>
+                        <button class="btn-secondary" data-connect="${idx}">Se connecter</button>
+                    </div>
+                </div>
+            `;
+            hunterTargets.appendChild(row);
+        });
+        hunterTargets.querySelectorAll('[data-connect]').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const index = Number(e.currentTarget.dataset.connect);
+                const target = targets[index];
+                if (!target) return;
+                chrome.runtime.sendMessage({ action: "CONNECT_TARGET", profileUrl: target.profileUrl }, response => {
+                    if (!response || !response.success) {
+                        setHunterStatus(response && response.error ? response.error : "Connexion échouée.", true);
+                        return;
+                    }
+                    setHunterStatus("Demande de connexion envoyée.");
+                });
+            });
+        });
+    };
+
+    const loadTargets = () => {
+        chrome.storage.local.get(['targets'], r => {
+            renderTargets(r.targets || []);
+        });
+    };
+
     renderHunterCategories();
     loadHunterSettings();
+    loadTargets();
 
     function nav(key, url, cb) {
         chrome.tabs.query({active:true, currentWindow:true}, async t => {
@@ -369,6 +419,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             HUNTER_LAST_CANDIDATES = response.candidates || [];
             renderHunterCandidates(HUNTER_LAST_CANDIDATES);
+            loadTargets();
             setHunterStatus(`Chasse terminée: ${response.added || 0} ajoutés, ${response.rejected || 0} rejetés.`);
         });
     };
@@ -420,8 +471,15 @@ document.addEventListener('DOMContentLoaded', () => {
                     setHunterStatus("Erreur lors de l'ajout des cibles.", true);
                     return;
                 }
+                loadTargets();
                 setHunterStatus(`Cibles ajoutées: ${response.added}.`);
             });
+        });
+    }
+
+    if (hunterRefreshBtn) {
+        hunterRefreshBtn.addEventListener('click', () => {
+            loadTargets();
         });
     }
 });

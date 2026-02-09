@@ -36,6 +36,15 @@ if (!window.ghostlyLoaded) {
                container.querySelector('button[aria-label*="Post"]');
     };
 
+    const findConnectButton = () => {
+        const buttons = Array.from(document.querySelectorAll('button'));
+        const match = buttons.find(btn => {
+            const label = (btn.innerText || btn.getAttribute('aria-label') || "").toLowerCase();
+            return label.includes('se connecter') || label.includes('connect');
+        });
+        return match || null;
+    };
+
     const waitForElement = async (selector, ctx = document, attempts = 12, delay = 400) => {
         for (let i = 0; i < attempts; i++) {
             const el = ctx.querySelector(selector);
@@ -378,6 +387,22 @@ if (!window.ghostlyLoaded) {
                     if (candidates.length >= maxProfiles) break;
                 }
                 sendResponse({ success: true, candidates });
+            })();
+            return true;
+        }
+        if (request.action === "CONNECT_PROFILE") {
+            (async () => {
+                if (isLoginPage()) {
+                    sendResponse({ success: false, error: "Veuillez vous connecter à LinkedIn." });
+                    return;
+                }
+                const btn = findConnectButton();
+                if (!btn) {
+                    sendResponse({ success: false, error: "Bouton de connexion introuvable." });
+                    return;
+                }
+                forceClick(btn);
+                sendResponse({ success: true });
             })();
             return true;
         }
