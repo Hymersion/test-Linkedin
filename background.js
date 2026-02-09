@@ -150,6 +150,29 @@ const extractAiDecision = (content) => {
     return { relevant: false, reason: "Réponse IA invalide", tag: "invalid" };
 };
 
+const connectToProfile = async (profileUrl) => {
+    if (!profileUrl) return { success: false, error: "URL profil manquante." };
+    const tabId = await new Promise(resolve => {
+        chrome.tabs.create({ url: profileUrl, active: false }, tab => resolve(tab.id));
+    });
+    const waitForTabComplete = () => new Promise(resolve => {
+        const onUpdated = (updatedTabId, info) => {
+            if (updatedTabId === tabId && info.status === "complete") {
+                chrome.tabs.onUpdated.removeListener(onUpdated);
+                resolve();
+            }
+        };
+        chrome.tabs.onUpdated.addListener(onUpdated);
+    });
+    await waitForTabComplete();
+    await chrome.scripting.executeScript({ target: { tabId }, files: CONTENT_SCRIPT_FILES });
+    const result = await new Promise(resolve => {
+        chrome.tabs.sendMessage(tabId, { action: "CONNECT_PROFILE" }, resolve);
+    });
+    chrome.tabs.remove(tabId);
+    return result || { success: false, error: "Connexion non exécutée." };
+};
+
 const runHunter = async ({ url, category, settings, consentGiven }) => {
     const hasConsent = await ensureConsent(consentGiven);
     if (!hasConsent) {
@@ -241,35 +264,18 @@ const runHunter = async ({ url, category, settings, consentGiven }) => {
     await setRejected(rejected.concat(newRejected));
     chrome.tabs.remove(tabId);
 
+    if (settings.autoConnect) {
+        for (const target of addedTargets) {
+            await connectToProfile(target.profileUrl);
+        }
+    }
+
     return {
         success: true,
         added: addedTargets.length,
         rejected: newRejected.length,
         candidates: filteredCandidates
     };
-};
-
-const connectToProfile = async (profileUrl) => {
-    if (!profileUrl) return { success: false, error: "URL profil manquante." };
-    const tabId = await new Promise(resolve => {
-        chrome.tabs.create({ url: profileUrl, active: false }, tab => resolve(tab.id));
-    });
-    const waitForTabComplete = () => new Promise(resolve => {
-        const onUpdated = (updatedTabId, info) => {
-            if (updatedTabId === tabId && info.status === "complete") {
-                chrome.tabs.onUpdated.removeListener(onUpdated);
-                resolve();
-            }
-        };
-        chrome.tabs.onUpdated.addListener(onUpdated);
-    });
-    await waitForTabComplete();
-    await chrome.scripting.executeScript({ target: { tabId }, files: CONTENT_SCRIPT_FILES });
-    const result = await new Promise(resolve => {
-        chrome.tabs.sendMessage(tabId, { action: "CONNECT_PROFILE" }, resolve);
-    });
-    chrome.tabs.remove(tabId);
-    return result || { success: false, error: "Connexion non exécutée." };
 };
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {

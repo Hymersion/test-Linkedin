@@ -23,6 +23,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const hunterInclude = document.getElementById('hunter_include');
     const hunterExclude = document.getElementById('hunter_exclude');
     const hunterMax = document.getElementById('hunter_max');
+    const hunterAutoConnect = document.getElementById('hunter_auto_connect');
     const hunterConsent = document.getElementById('hunter_consent');
     const hunterStatus = document.getElementById('hunter_status');
     const hunterCandidates = document.getElementById('hunter_candidates');
@@ -76,6 +77,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (hunterInclude) hunterInclude.value = settings.includeKeywords || "";
             if (hunterExclude) hunterExclude.value = settings.excludeKeywords || "";
             if (hunterMax) hunterMax.value = settings.maxProfilesPerRun || 30;
+            if (hunterAutoConnect) hunterAutoConnect.checked = Boolean(settings.autoConnect);
             if (hunterConsent) hunterConsent.checked = Boolean(r[HUNTER_CONSENT_KEY]);
         });
     };
@@ -88,7 +90,8 @@ document.addEventListener('DOMContentLoaded', () => {
             language: hunterLanguage ? hunterLanguage.value.trim() : "",
             includeKeywords: hunterInclude ? hunterInclude.value.trim() : "",
             excludeKeywords: hunterExclude ? hunterExclude.value.trim() : "",
-            maxProfilesPerRun: hunterMax ? Number(hunterMax.value || 30) : 30
+            maxProfilesPerRun: hunterMax ? Number(hunterMax.value || 30) : 30,
+            autoConnect: hunterAutoConnect ? hunterAutoConnect.checked : false
         };
         chrome.storage.local.set({ [HUNTER_SETTINGS_KEY]: settings });
         return settings;

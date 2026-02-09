@@ -23,6 +23,11 @@ window.HUNTER_QUERIES = {
         "\"médecin\"",
         "\"docteur\"",
         "\"chirurgien\""
+    ],
+    "Business angel": [
+        "\"business angel\"",
+        "\"angel investor\"",
+        "\"investisseur\""
     ]
 };
 
