@@ -25,7 +25,7 @@ const initDashboard = () => {
 
     const promptBox = document.getElementById('prompt_box');
     const apiKeyInput = document.getElementById('input_api_key');
-    const hunterCategory = document.getElementById('hunter_category');
+    const hunterKeyword = document.getElementById('hunter_keyword');
     const hunterCustomQuery = document.getElementById('hunter_custom_query');
     const hunterLocation = document.getElementById('hunter_location');
     const hunterLanguage = document.getElementById('hunter_language');
@@ -69,23 +69,11 @@ const initDashboard = () => {
 
     loadApiKey();
 
-    const renderHunterCategories = () => {
-        if (!hunterCategory) return;
-        const categories = Object.keys(window.HUNTER_QUERIES || {});
-        hunterCategory.innerHTML = "";
-        categories.concat("Custom").forEach(cat => {
-            const opt = document.createElement('option');
-            opt.value = cat;
-            opt.textContent = cat;
-            hunterCategory.appendChild(opt);
-        });
-    };
-
     const loadHunterSettings = () => {
         if (!chromeAvailable) return;
         chrome.storage.local.get([HUNTER_SETTINGS_KEY, HUNTER_CONSENT_KEY], r => {
             const settings = r[HUNTER_SETTINGS_KEY] || {};
-            if (hunterCategory) hunterCategory.value = settings.defaultCategory || "Freelance marketing";
+            if (hunterKeyword) hunterKeyword.value = settings.keyword || "";
             if (hunterCustomQuery) hunterCustomQuery.value = settings.customQuery || "";
             if (hunterLocation) hunterLocation.value = settings.location || "";
             if (hunterLanguage) hunterLanguage.value = settings.language || "";
@@ -99,7 +87,7 @@ const initDashboard = () => {
 
     const saveHunterSettings = () => {
         const settings = {
-            defaultCategory: hunterCategory ? hunterCategory.value : "Freelance marketing",
+            keyword: hunterKeyword ? hunterKeyword.value.trim() : "",
             customQuery: hunterCustomQuery ? hunterCustomQuery.value.trim() : "",
             location: hunterLocation ? hunterLocation.value.trim() : "",
             language: hunterLanguage ? hunterLanguage.value.trim() : "",
@@ -195,7 +183,6 @@ const initDashboard = () => {
         });
     };
 
-    renderHunterCategories();
     loadHunterSettings();
     loadTargets();
 
@@ -485,7 +472,7 @@ const initDashboard = () => {
     if (hunterStartBtn) {
         hunterStartBtn.addEventListener('click', () => {
             const settings = saveHunterSettings();
-            const category = hunterCategory ? hunterCategory.value : "Freelance marketing";
+            const category = settings.keyword || "Général";
             runHunter({
                 action: "START_AUTO_HUNT",
                 category,
