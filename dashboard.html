@@ -194,24 +194,30 @@
                 <option value="all">Toutes les catégories</option>
             </select>
             <div class="row">
-                <button class="btn-secondary" id="auto_schedule_daily">1x / jour</button>
-                <button class="btn-secondary" id="auto_schedule_weekly">1x / semaine</button>
+                <button class="btn-secondary" id="auto_schedule_daily" type="button">1x / jour</button>
+                <button class="btn-secondary" id="auto_schedule_weekly" type="button">1x / semaine</button>
             </div>
             <div class="row">
-                <select id="auto_schedule_time">
-                    <option value="08:00">08:00</option>
-                    <option value="10:00">10:00</option>
-                    <option value="12:00">12:00</option>
-                    <option value="15:00">15:00</option>
-                    <option value="18:00">18:00</option>
-                </select>
-                <select id="auto_schedule_days" multiple>
-                    <option>Lun</option>
-                    <option>Mar</option>
-                    <option>Mer</option>
-                    <option>Jeu</option>
-                    <option>Ven</option>
-                </select>
+                <div>
+                    <label class="muted">Heure</label>
+                    <div class="row">
+                        <button class="btn-secondary" type="button" data-time="08:00">08:00</button>
+                        <button class="btn-secondary" type="button" data-time="10:00">10:00</button>
+                        <button class="btn-secondary" type="button" data-time="12:00">12:00</button>
+                        <button class="btn-secondary" type="button" data-time="15:00">15:00</button>
+                        <button class="btn-secondary" type="button" data-time="18:00">18:00</button>
+                    </div>
+                </div>
+                <div>
+                    <label class="muted">Jours</label>
+                    <div class="row">
+                        <button class="btn-secondary" type="button" data-day="Lun">Lun</button>
+                        <button class="btn-secondary" type="button" data-day="Mar">Mar</button>
+                        <button class="btn-secondary" type="button" data-day="Mer">Mer</button>
+                        <button class="btn-secondary" type="button" data-day="Jeu">Jeu</button>
+                        <button class="btn-secondary" type="button" data-day="Ven">Ven</button>
+                    </div>
+                </div>
             </div>
             <p class="muted">Choisissez la catégorie, la fréquence, l’heure et les jours.</p>
         </div>

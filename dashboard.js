@@ -44,6 +44,12 @@ const initDashboard = () => {
     const hunterCategories = document.getElementById('hunter_categories');
     const hunterSort = document.getElementById('hunter_sort');
     const hunterFilterLetter = document.getElementById('hunter_filter_letter');
+    const autoTargetsCategorySelect = document.getElementById('auto_targets_category_select');
+    const autoScheduleDaily = document.getElementById('auto_schedule_daily');
+    const autoScheduleWeekly = document.getElementById('auto_schedule_weekly');
+    const autoTargetsStart = document.getElementById('btn_auto_targets_start');
+    const autoScheduleTimeButtons = document.querySelectorAll('[data-time]');
+    const autoScheduleDayButtons = document.querySelectorAll('[data-day]');
     let FOUND_COMS = [];
     let RADAR_OPPS = [];
     let HUNTER_LAST_CANDIDATES = [];
@@ -191,6 +197,20 @@ const initDashboard = () => {
     const renderTargets = (targets) => {
         if (!hunterTargets) return;
         hunterTargets.innerHTML = "";
+        if (autoTargetsCategorySelect) {
+            const categories = Array.from(new Set((targets || []).map(t => t.category || "Sans catégorie"))).sort();
+            autoTargetsCategorySelect.innerHTML = "";
+            const allOption = document.createElement('option');
+            allOption.value = "all";
+            allOption.textContent = "Toutes les catégories";
+            autoTargetsCategorySelect.appendChild(allOption);
+            categories.forEach(cat => {
+                const opt = document.createElement('option');
+                opt.value = cat;
+                opt.textContent = cat;
+                autoTargetsCategorySelect.appendChild(opt);
+            });
+        }
         const grouped = (targets || []).reduce((acc, t) => {
             const key = t.category || "Sans catégorie";
             if (!acc[key]) acc[key] = [];
@@ -258,6 +278,73 @@ const initDashboard = () => {
             renderTargets(r.targets || []);
         });
     };
+
+    const setActiveButton = (buttons, activeValue, attr) => {
+        buttons.forEach(btn => {
+            const isActive = btn.getAttribute(attr) === activeValue;
+            btn.classList.toggle('btn-accent', isActive);
+            btn.classList.toggle('btn-secondary', !isActive);
+        });
+    };
+
+    const toggleButton = (btn, active) => {
+        btn.classList.toggle('btn-accent', active);
+        btn.classList.toggle('btn-secondary', !active);
+    };
+
+    const scheduleState = {
+        frequency: 'daily',
+        time: '10:00',
+        days: new Set()
+    };
+
+    if (autoScheduleDaily && autoScheduleWeekly) {
+        autoScheduleDaily.addEventListener('click', () => {
+            scheduleState.frequency = 'daily';
+            toggleButton(autoScheduleDaily, true);
+            toggleButton(autoScheduleWeekly, false);
+        });
+        autoScheduleWeekly.addEventListener('click', () => {
+            scheduleState.frequency = 'weekly';
+            toggleButton(autoScheduleWeekly, true);
+            toggleButton(autoScheduleDaily, false);
+        });
+        toggleButton(autoScheduleDaily, true);
+        toggleButton(autoScheduleWeekly, false);
+    }
+
+    if (autoScheduleTimeButtons.length) {
+        autoScheduleTimeButtons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                scheduleState.time = btn.getAttribute('data-time');
+                setActiveButton(autoScheduleTimeButtons, scheduleState.time, 'data-time');
+            });
+        });
+        setActiveButton(autoScheduleTimeButtons, scheduleState.time, 'data-time');
+    }
+
+    if (autoScheduleDayButtons.length) {
+        autoScheduleDayButtons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                const day = btn.getAttribute('data-day');
+                if (scheduleState.days.has(day)) {
+                    scheduleState.days.delete(day);
+                    toggleButton(btn, false);
+                } else {
+                    scheduleState.days.add(day);
+                    toggleButton(btn, true);
+                }
+            });
+        });
+    }
+
+    if (autoTargetsStart) {
+        autoTargetsStart.addEventListener('click', () => {
+            const category = autoTargetsCategorySelect ? autoTargetsCategorySelect.value : 'all';
+            const days = Array.from(scheduleState.days).join(', ') || 'tous';
+            setHunterStatus(`Planification: ${category} • ${scheduleState.frequency} • ${scheduleState.time} • ${days}`);
+        });
+    }
 
     loadHunterSettings();
     loadTargets();
