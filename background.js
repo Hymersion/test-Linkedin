@@ -200,9 +200,16 @@ const runHunter = async ({ url, category, settings, consentGiven }) => {
     await waitForTabComplete();
     await chrome.scripting.executeScript({ target: { tabId }, files: CONTENT_SCRIPT_FILES });
 
-    const scrapeResult = await new Promise(resolve => {
+    const runScrape = () => new Promise(resolve => {
         chrome.tabs.sendMessage(tabId, { action: "SCRAPE_SEARCH_RESULTS", maxProfilesPerRun: settings.maxProfilesPerRun || 30 }, resolve);
     });
+
+    await new Promise(r => setTimeout(r, 2500));
+    let scrapeResult = await runScrape();
+    if (scrapeResult && scrapeResult.success && (!scrapeResult.candidates || scrapeResult.candidates.length === 0)) {
+        await new Promise(r => setTimeout(r, 2500));
+        scrapeResult = await runScrape();
+    }
 
     if (!scrapeResult || !scrapeResult.success) {
         chrome.tabs.remove(tabId);
