@@ -4,12 +4,21 @@ document.addEventListener('DOMContentLoaded', () => {
     const API_KEY_STORAGE_KEY = "openaiApiKey";
     const HUNTER_SETTINGS_KEY = "hunterSettings";
     const HUNTER_CONSENT_KEY = "consentGiven";
+    const onClick = (id, handler) => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('click', handler);
+        return el;
+    };
+
     Object.keys(map).forEach(navId => {
-        document.getElementById(navId).addEventListener('click', () => {
+        const el = document.getElementById(navId);
+        if (!el) return;
+        el.addEventListener('click', () => {
             document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-            document.getElementById(navId).classList.add('active');
-            document.getElementById(map[navId]).classList.add('active');
+            el.classList.add('active');
+            const targetTab = document.getElementById(map[navId]);
+            if (targetTab) targetTab.classList.add('active');
             if(navId === 'nav_queue') loadQueue();
         });
     });
@@ -198,7 +207,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- SCAN POST UNIQUE ---
-    document.getElementById('btn_scan_post').addEventListener('click', () => {
+    onClick('btn_scan_post', () => {
         const u = document.getElementById('input_url').value;
         nav(u.split('?')[0], u, tid => {
             chrome.tabs.sendMessage(tid, {action:"START_SCAN"}, r => {
@@ -235,7 +244,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     
     // PUBLICATION SELECTIVE
-    document.getElementById('btn_pub_all').addEventListener('click', () => {
+    onClick('btn_pub_all', () => {
         chrome.tabs.query({active:true}, async t => {
             alert("Publication de la sélection... (10s entre chaque)");
             for(let i=0; i<FOUND_COMS.length; i++) {
@@ -260,7 +269,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // --- RADAR ---
-    document.getElementById('btn_scan_radar').addEventListener('click', () => {
+    onClick('btn_scan_radar', () => {
         const time = document.getElementById('input_scroll').value;
         nav("linkedin.com/feed", "https://www.linkedin.com/feed/", tid => {
             alert("Radar lancé (Atomique)...");
@@ -287,7 +296,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    document.getElementById('btn_pub_radar').addEventListener('click', () => {
+    onClick('btn_pub_radar', () => {
         chrome.tabs.query({active:true}, async t => {
             alert("Envoi Radar...");
             for(let i=0; i<RADAR_OPPS.length; i++) {
@@ -301,7 +310,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // --- RESTE INCHANGE ---
-    document.getElementById('btn_ideas').addEventListener('click', () => {
+    onClick('btn_ideas', () => {
         chrome.runtime.sendMessage({action:"GENERATE_DAILY_IDEAS", persona:promptBox.value}, r => {
             if (r && r.error) {
                 alert(r.error);
@@ -324,13 +333,13 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    document.getElementById('btn_pub_now').addEventListener('click', () => {
+    onClick('btn_pub_now', () => {
         if(confirm("Publier ?")) nav("linkedin.com/feed", "https://www.linkedin.com/feed/", tid => {
             chrome.tabs.sendMessage(tid, {action:"WRITE_POST_ON_LINKEDIN", content:document.getElementById('input_final').value, autoPost:true});
         });
     });
 
-    document.getElementById('btn_add_queue').addEventListener('click', () => {
+    onClick('btn_add_queue', () => {
         const txt = document.getElementById('input_final').value;
         const time = document.getElementById('schedule_time').value;
         if(!txt || !time) return alert("Remplir texte et date");
@@ -372,9 +381,9 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
     }
-    document.getElementById('btn_refresh_queue').addEventListener('click', loadQueue);
+    onClick('btn_refresh_queue', loadQueue);
     
-    document.getElementById('btn_scan_profile').addEventListener('click', () => {
+    onClick('btn_scan_profile', () => {
         nav("linkedin.com/in/", "https://www.linkedin.com/in/me/", tid => {
             chrome.tabs.sendMessage(tid, {action:"SCRAPE_MY_PROFILE"}, r => {
                 if(r && r.success) chrome.runtime.sendMessage({action:"BUILD_PERSONA", profile:r.data}, ai => {
@@ -386,10 +395,10 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
     });
-    document.getElementById('btn_save').addEventListener('click', () => chrome.storage.local.set({persona:promptBox.value}, ()=>alert("Sauvé")));
+    onClick('btn_save', () => chrome.storage.local.set({persona:promptBox.value}, ()=>alert("Sauvé")));
 
     if (apiKeyInput) {
-        document.getElementById('btn_save_api_key').addEventListener('click', () => {
+        onClick('btn_save_api_key', () => {
             const apiKey = apiKeyInput.value.trim();
             if (!apiKey) {
                 chrome.storage.sync.remove([API_KEY_STORAGE_KEY], () => {
