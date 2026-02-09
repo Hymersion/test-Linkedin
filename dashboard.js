@@ -44,12 +44,17 @@ document.addEventListener('DOMContentLoaded', () => {
     let RADAR_OPPS = [];
     let HUNTER_LAST_CANDIDATES = [];
 
-    chrome.storage.local.get(['persona'], r => {
-        if (promptBox) promptBox.value = r.persona || "Expert.";
-    });
+    const chromeAvailable = typeof chrome !== "undefined" && chrome.storage && chrome.runtime;
+
+    if (chromeAvailable) {
+        chrome.storage.local.get(['persona'], r => {
+            if (promptBox) promptBox.value = r.persona || "Expert.";
+        });
+    }
 
     const loadApiKey = () => {
         if (!apiKeyInput) return;
+        if (!chromeAvailable) return;
         chrome.storage.sync.get([API_KEY_STORAGE_KEY], syncResult => {
             const syncKey = (syncResult[API_KEY_STORAGE_KEY] || "").trim();
             if (syncKey) {
@@ -77,6 +82,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     const loadHunterSettings = () => {
+        if (!chromeAvailable) return;
         chrome.storage.local.get([HUNTER_SETTINGS_KEY, HUNTER_CONSENT_KEY], r => {
             const settings = r[HUNTER_SETTINGS_KEY] || {};
             if (hunterCategory) hunterCategory.value = settings.defaultCategory || "Freelance marketing";
@@ -102,7 +108,9 @@ document.addEventListener('DOMContentLoaded', () => {
             maxProfilesPerRun: hunterMax ? Number(hunterMax.value || 30) : 30,
             autoConnect: hunterAutoConnect ? hunterAutoConnect.checked : false
         };
-        chrome.storage.local.set({ [HUNTER_SETTINGS_KEY]: settings });
+        if (chromeAvailable) {
+            chrome.storage.local.set({ [HUNTER_SETTINGS_KEY]: settings });
+        }
         return settings;
     };
 
@@ -181,6 +189,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     const loadTargets = () => {
+        if (!chromeAvailable) return;
         chrome.storage.local.get(['targets'], r => {
             renderTargets(r.targets || []);
         });
@@ -191,6 +200,10 @@ document.addEventListener('DOMContentLoaded', () => {
     loadTargets();
 
     function nav(key, url, cb) {
+        if (!chromeAvailable) {
+            alert("Fonctionnalité indisponible hors extension.");
+            return;
+        }
         chrome.tabs.query({active:true, currentWindow:true}, async t => {
             if(t[0].url.includes(key)) {
                 await chrome.scripting.executeScript({target:{tabId:t[0].id}, files:['selectors.js', 'content.js']});
@@ -311,6 +324,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- RESTE INCHANGE ---
     onClick('btn_ideas', () => {
+        if (!chromeAvailable) {
+            alert("Fonctionnalité indisponible hors extension.");
+            return;
+        }
         chrome.runtime.sendMessage({action:"GENERATE_DAILY_IDEAS", persona:promptBox.value}, r => {
             if (r && r.error) {
                 alert(r.error);
@@ -334,6 +351,10 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     onClick('btn_pub_now', () => {
+        if(!chromeAvailable) {
+            alert("Fonctionnalité indisponible hors extension.");
+            return;
+        }
         if(confirm("Publier ?")) nav("linkedin.com/feed", "https://www.linkedin.com/feed/", tid => {
             chrome.tabs.sendMessage(tid, {action:"WRITE_POST_ON_LINKEDIN", content:document.getElementById('input_final').value, autoPost:true});
         });
@@ -343,6 +364,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const txt = document.getElementById('input_final').value;
         const time = document.getElementById('schedule_time').value;
         if(!txt || !time) return alert("Remplir texte et date");
+        if (!chromeAvailable) {
+            alert("Fonctionnalité indisponible hors extension.");
+            return;
+        }
         chrome.storage.local.get(['postQueue'], r => {
             const q = r.postQueue || [];
             q.push({id: Date.now(), content: txt, timestamp: new Date(time).getTime(), sent: false});
@@ -356,6 +381,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function loadQueue() {
         const div = document.getElementById('list_queue'); div.innerHTML = "";
+        if (!chromeAvailable) return;
         chrome.storage.local.get(['postQueue'], r => {
             const q = r.postQueue || [];
             q.forEach(p => {
@@ -384,6 +410,10 @@ document.addEventListener('DOMContentLoaded', () => {
     onClick('btn_refresh_queue', loadQueue);
     
     onClick('btn_scan_profile', () => {
+        if (!chromeAvailable) {
+            alert("Fonctionnalité indisponible hors extension.");
+            return;
+        }
         nav("linkedin.com/in/", "https://www.linkedin.com/in/me/", tid => {
             chrome.tabs.sendMessage(tid, {action:"SCRAPE_MY_PROFILE"}, r => {
                 if(r && r.success) chrome.runtime.sendMessage({action:"BUILD_PERSONA", profile:r.data}, ai => {
@@ -395,10 +425,20 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
     });
-    onClick('btn_save', () => chrome.storage.local.set({persona:promptBox.value}, ()=>alert("Sauvé")));
+    onClick('btn_save', () => {
+        if (!chromeAvailable) {
+            alert("Fonctionnalité indisponible hors extension.");
+            return;
+        }
+        chrome.storage.local.set({persona:promptBox.value}, ()=>alert("Sauvé"));
+    });
 
     if (apiKeyInput) {
         onClick('btn_save_api_key', () => {
+            if (!chromeAvailable) {
+                alert("Fonctionnalité indisponible hors extension.");
+                return;
+            }
             const apiKey = apiKeyInput.value.trim();
             if (!apiKey) {
                 chrome.storage.sync.remove([API_KEY_STORAGE_KEY], () => {
@@ -414,12 +454,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (hunterConsent) {
         hunterConsent.addEventListener('change', () => {
+            if (!chromeAvailable) return;
             chrome.storage.local.set({ [HUNTER_CONSENT_KEY]: hunterConsent.checked });
         });
     }
 
     const runHunter = (payload) => {
         setHunterStatus("Chasse en cours...");
+        if (!chromeAvailable) {
+            setHunterStatus("Fonctionnalité indisponible hors extension.", true);
+            return;
+        }
         chrome.runtime.sendMessage(payload, response => {
             if (!response) {
                 setHunterStatus("Erreur: aucune réponse.", true);
@@ -476,6 +521,10 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             if (selected.length === 0) {
                 setHunterStatus("Aucun candidat sélectionné.", true);
+                return;
+            }
+            if (!chromeAvailable) {
+                setHunterStatus("Fonctionnalité indisponible hors extension.", true);
                 return;
             }
             chrome.runtime.sendMessage({ action: "ADD_TARGETS", candidates: selected }, response => {
