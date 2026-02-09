@@ -181,10 +181,17 @@
         <div class="section">
             <h4>Auto commentaire du fil + Like</h4>
             <div class="row">
-                <input id="auto_feed_frequency" placeholder="Fréquence (ex: 10 min)">
-                <input id="auto_feed_duration" placeholder="Durée (ex: 30 min)">
+                <button class="btn-secondary" type="button" data-feed-frequency="10">10 min</button>
+                <button class="btn-secondary" type="button" data-feed-frequency="30">30 min</button>
+                <button class="btn-secondary" type="button" data-feed-frequency="60">60 min</button>
             </div>
-            <input id="auto_feed_days" placeholder="Jours (ex: Lun, Mar, Mer)">
+            <div class="row">
+                <button class="btn-secondary" type="button" data-feed-day="Lun">Lun</button>
+                <button class="btn-secondary" type="button" data-feed-day="Mar">Mar</button>
+                <button class="btn-secondary" type="button" data-feed-day="Mer">Mer</button>
+                <button class="btn-secondary" type="button" data-feed-day="Jeu">Jeu</button>
+                <button class="btn-secondary" type="button" data-feed-day="Ven">Ven</button>
+            </div>
             <button class="btn-secondary" id="btn_auto_feed_start">Démarrer</button>
         </div>
         <div class="section">
