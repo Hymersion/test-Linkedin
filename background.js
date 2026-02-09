@@ -1,5 +1,32 @@
+<<<<<<< HEAD
+importScripts('hunter_queries.js');
+
+const API_KEY_STORAGE_KEY = "openaiApiKey";
+const TARGETS_KEY = "targets";
+const REJECTED_KEY = "rejected";
+const HUNTER_CONSENT_KEY = "consentGiven";
+=======
+<<<<<<< HEAD
+const API_KEY = "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"; 
+=======
 const API_KEY = "";
+>>>>>>> codex/activer-cle-secrete-pour-fonctionnalites-76k82j
+>>>>>>> main
 const QUEUE_ALARM = "ghostly-post-queue";
+const CONTENT_SCRIPT_FILES = ['selectors.js', 'content.js'];
+
+const getApiKey = () => new Promise(resolve => {
+    chrome.storage.sync.get([API_KEY_STORAGE_KEY], syncResult => {
+        const syncKey = (syncResult[API_KEY_STORAGE_KEY] || "").trim();
+        if (syncKey) {
+            resolve(syncKey);
+            return;
+        }
+        chrome.storage.local.get([API_KEY_STORAGE_KEY], localResult => {
+            resolve((localResult[API_KEY_STORAGE_KEY] || "").trim());
+        });
+    });
+});
 
 const getQueue = () => new Promise(resolve => {
     chrome.storage.local.get(['postQueue'], r => resolve(r.postQueue || []));
@@ -9,13 +36,35 @@ const setQueue = (queue) => new Promise(resolve => {
     chrome.storage.local.set({ postQueue: queue }, resolve);
 });
 
+<<<<<<< HEAD
+const getTargets = () => new Promise(resolve => {
+    chrome.storage.local.get([TARGETS_KEY], r => resolve(r[TARGETS_KEY] || []));
+});
+
+const setTargets = (targets) => new Promise(resolve => {
+    chrome.storage.local.set({ [TARGETS_KEY]: targets }, resolve);
+});
+
+const getRejected = () => new Promise(resolve => {
+    chrome.storage.local.get([REJECTED_KEY], r => resolve(r[REJECTED_KEY] || []));
+});
+
+const setRejected = (rejected) => new Promise(resolve => {
+    chrome.storage.local.set({ [REJECTED_KEY]: rejected }, resolve);
+});
+
+=======
+<<<<<<< HEAD
+=======
+>>>>>>> main
 const fetchOpenAI = async (payload) => {
-    if (!API_KEY) {
+    const apiKey = await getApiKey();
+    if (!apiKey) {
         return { ok: false, data: null, error: "OpenAI API key missing" };
     }
     const r = await fetch("https://api.openai.com/v1/chat/completions", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${API_KEY}` },
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
         body: JSON.stringify(payload)
     });
     let data = null;
@@ -30,6 +79,7 @@ const fetchOpenAI = async (payload) => {
     return { ok: true, data, error: null };
 };
 
+>>>>>>> codex/activer-cle-secrete-pour-fonctionnalites-76k82j
 const scheduleNextPost = async () => {
     const queue = await getQueue();
     const next = queue
@@ -52,7 +102,7 @@ const openLinkedInAndPost = async (content) => new Promise(resolve => {
             if (updatedTabId === tabId && info.status === "complete") {
                 chrome.tabs.onUpdated.removeListener(onUpdated);
                 try {
-                    await chrome.scripting.executeScript({ target: { tabId }, files: ['content.js'] });
+                    await chrome.scripting.executeScript({ target: { tabId }, files: CONTENT_SCRIPT_FILES });
                     chrome.tabs.sendMessage(tabId, { action: "WRITE_POST_ON_LINKEDIN", content, autoPost: true }, () => {
                         resolve(true);
                         chrome.tabs.remove(tabId);
@@ -87,6 +137,161 @@ function clean(text) {
     return text.replace(/^(Score|Note|Analyse|Evaluation).*?$/gim, "").replace(/\d+\/\d+/g, "").replace(/"/g, "").trim();
 }
 
+const parseJsonSafe = (text) => {
+    try {
+        return JSON.parse(text);
+    } catch (e) {
+        return null;
+    }
+};
+
+const buildHunterSearchUrl = (category, settings) => {
+    const query = buildHunterQuery(category, settings.customQuery, settings);
+    return buildLinkedInSearchUrl(query);
+};
+
+const ensureConsent = async (consentGiven) => {
+    if (consentGiven) return true;
+    const stored = await new Promise(resolve => {
+        chrome.storage.local.get([HUNTER_CONSENT_KEY], r => resolve(Boolean(r[HUNTER_CONSENT_KEY])));
+    });
+    return stored;
+};
+
+const extractAiDecision = (content) => {
+    const parsed = parseJsonSafe(content);
+    if (parsed && typeof parsed.relevant === "boolean") return parsed;
+    return { relevant: false, reason: "Réponse IA invalide", tag: "invalid" };
+};
+
+const connectToProfile = async (profileUrl) => {
+    if (!profileUrl) return { success: false, error: "URL profil manquante." };
+    const tabId = await new Promise(resolve => {
+        chrome.tabs.create({ url: profileUrl, active: false }, tab => resolve(tab.id));
+    });
+    const waitForTabComplete = () => new Promise(resolve => {
+        const onUpdated = (updatedTabId, info) => {
+            if (updatedTabId === tabId && info.status === "complete") {
+                chrome.tabs.onUpdated.removeListener(onUpdated);
+                resolve();
+            }
+        };
+        chrome.tabs.onUpdated.addListener(onUpdated);
+    });
+    await waitForTabComplete();
+    await chrome.scripting.executeScript({ target: { tabId }, files: CONTENT_SCRIPT_FILES });
+    const result = await new Promise(resolve => {
+        chrome.tabs.sendMessage(tabId, { action: "CONNECT_PROFILE" }, resolve);
+    });
+    chrome.tabs.remove(tabId);
+    return result || { success: false, error: "Connexion non exécutée." };
+};
+
+const runHunter = async ({ url, category, settings, consentGiven }) => {
+    const hasConsent = await ensureConsent(consentGiven);
+    if (!hasConsent) {
+        return { success: false, error: "Consentement requis pour lancer la chasse." };
+    }
+    const searchUrl = url || buildHunterSearchUrl(category, settings);
+    const tabId = await new Promise(resolve => {
+        chrome.tabs.create({ url: searchUrl, active: false }, tab => resolve(tab.id));
+    });
+
+    const waitForTabComplete = () => new Promise(resolve => {
+        const onUpdated = (updatedTabId, info) => {
+            if (updatedTabId === tabId && info.status === "complete") {
+                chrome.tabs.onUpdated.removeListener(onUpdated);
+                resolve();
+            }
+        };
+        chrome.tabs.onUpdated.addListener(onUpdated);
+    });
+
+    await waitForTabComplete();
+    await chrome.scripting.executeScript({ target: { tabId }, files: CONTENT_SCRIPT_FILES });
+
+    const scrapeResult = await new Promise(resolve => {
+        chrome.tabs.sendMessage(tabId, { action: "SCRAPE_SEARCH_RESULTS", maxProfilesPerRun: settings.maxProfilesPerRun || 30 }, resolve);
+    });
+
+    if (!scrapeResult || !scrapeResult.success) {
+        chrome.tabs.remove(tabId);
+        return { success: false, error: scrapeResult && scrapeResult.error ? scrapeResult.error : "Scrape échoué." };
+    }
+
+    const targets = await getTargets();
+    const rejected = await getRejected();
+    const existingUrls = new Set(targets.map(t => t.profileUrl));
+    const rejectedUrls = new Set(rejected.map(r => r.profileUrl));
+    const candidates = scrapeResult.candidates || [];
+    const filteredCandidates = candidates.filter(c => !existingUrls.has(c.profileUrl) && !rejectedUrls.has(c.profileUrl));
+
+    const addedTargets = [];
+    const newRejected = [];
+
+    for (const candidate of filteredCandidates) {
+        candidate.category = category;
+        const { ok, data, error } = await fetchOpenAI({
+            model: "gpt-4o",
+            messages: [{
+                role: "user",
+                content: `Catégorie: ${category}\nProfil: ${candidate.fullName}\nHeadline: ${candidate.headline || ""}\nObjectif: ${settings.includeKeywords || ""}\nRéponds au format JSON strict: {"relevant": true/false, "reason": "...", "tag": "..."}.`
+            }],
+            temperature: 0.2
+        });
+        if (!ok) {
+            newRejected.push({
+                profileUrl: candidate.profileUrl,
+                reason: error || "Erreur IA",
+                category,
+                rejectedAt: Date.now()
+            });
+            continue;
+        }
+        const content = data && data.choices && data.choices[0] && data.choices[0].message
+            ? data.choices[0].message.content
+            : "";
+        const decision = extractAiDecision(content);
+        if (decision.relevant) {
+            addedTargets.push({
+                id: Date.now() + Math.floor(Math.random() * 1000),
+                profileUrl: candidate.profileUrl,
+                fullName: candidate.fullName,
+                headline: candidate.headline,
+                category,
+                addedAt: Date.now()
+            });
+            candidate.reason = decision.reason;
+            candidate.prechecked = true;
+        } else {
+            newRejected.push({
+                profileUrl: candidate.profileUrl,
+                reason: decision.reason,
+                category,
+                rejectedAt: Date.now()
+            });
+            candidate.reason = decision.reason;
+        }
+    }
+
+    await setTargets(targets.concat(addedTargets));
+    await setRejected(rejected.concat(newRejected));
+    chrome.tabs.remove(tabId);
+
+    if (settings.autoConnect) {
+        for (const target of addedTargets) {
+            await connectToProfile(target.profileUrl);
+        }
+    }
+
+    return {
+        success: true,
+        added: addedTargets.length,
+        rejected: newRejected.length,
+        candidates: filteredCandidates
+    };
+};
+
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   // RADAR
   if (request.action === "ANALYZE_FEED_MANUAL") {
@@ -95,6 +300,15 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           let hadError = false;
           for(let p of request.posts.slice(0, 8)) {
              try {
+<<<<<<< HEAD
+                 const r = await fetch("https://api.openai.com/v1/chat/completions", {
+                    method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${API_KEY}` },
+                    body: JSON.stringify({ model: "gpt-4o", messages: [{role:"user", content: `CONTEXTE: LinkedIn. POST: "${p.text.substring(0,200)}...". Si pertinent pro, écris une réponse précise et contextualisée (1-2 phrases), évite les phrases génériques. Si non pertinent: SKIP.`}], temperature: 0.6 })
+                 });
+                 const d = await r.json();
+                 const content = d && d.choices && d.choices[0] && d.choices[0].message
+                     ? d.choices[0].message.content
+=======
                  const { ok, data, error } = await fetchOpenAI({
                     model: "gpt-4o",
                     messages: [{role:"user", content: `CONTEXTE: LinkedIn. POST: "${p.text.substring(0,200)}...". Si pertinent pro, écris une réponse précise et contextualisée (1-2 phrases), évite les phrases génériques. Si non pertinent: SKIP.`}],
@@ -103,6 +317,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                  if (!ok) throw new Error(error);
                  const content = data && data.choices && data.choices[0] && data.choices[0].message
                      ? data.choices[0].message.content
+>>>>>>> codex/activer-cle-secrete-pour-fonctionnalites-76k82j
                      : "";
                  let rep = clean(content);
                  if(rep.length > 1) { p.aiReply = rep; results.push(p); }
@@ -116,10 +331,16 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "GENERATE_SAV_REPLY") {
     (async () => {
         try {
+<<<<<<< HEAD
+            const r = await fetch("https://api.openai.com/v1/chat/completions", {
+                method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${API_KEY}` },
+                body: JSON.stringify({ model: "gpt-4o", messages: [{role:"user", content: `Persona: "${request.persona || "Expert"}". Contexte: "${request.postContext.substring(0,150)}...". Commentaire: "${request.text}". Tâche: réponse courte (1-2 phrases), spécifique, sans formules génériques.`}], temperature: 0.5 })
+=======
             const { ok, data, error } = await fetchOpenAI({
                 model: "gpt-4o",
                 messages: [{role:"user", content: `Persona: "${request.persona || "Expert"}". Contexte: "${request.postContext.substring(0,150)}...". Commentaire: "${request.text}". Tâche: réponse courte (1-2 phrases), spécifique, sans formules génériques.`}],
                 temperature: 0.5
+>>>>>>> codex/activer-cle-secrete-pour-fonctionnalites-76k82j
             });
             if (!ok) throw new Error(error);
             sendResponse({ reply: clean(data.choices[0].message.content) });
@@ -131,6 +352,15 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "GENERATE_DAILY_IDEAS") {
       (async () => {
         try {
+<<<<<<< HEAD
+            const r = await fetch("https://api.openai.com/v1/chat/completions", {
+                method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${API_KEY}` },
+                body: JSON.stringify({ model: "gpt-4o", messages: [{role:"user", content: `3 idées posts LinkedIn.`}], temperature: 0.8 })
+            });
+            const d = await r.json();
+            const ideas = d && d.choices && d.choices[0] && d.choices[0].message
+                ? d.choices[0].message.content
+=======
             const { ok, data, error } = await fetchOpenAI({
                 model: "gpt-4o",
                 messages: [{role:"user", content: `3 idées posts LinkedIn.`}],
@@ -139,22 +369,35 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             if (!ok) throw new Error(error);
             const ideas = data && data.choices && data.choices[0] && data.choices[0].message
                 ? data.choices[0].message.content
+>>>>>>> codex/activer-cle-secrete-pour-fonctionnalites-76k82j
                 : "";
             if (!ideas) throw new Error("EMPTY_IDEAS");
             sendResponse({ success: true, ideas });
         } catch (e) {
+<<<<<<< HEAD
+            sendResponse({ success: false, ideas: "Idée 1|||Sujet simple###Idée 2|||Conseil pratique###Idée 3|||Retour d'expérience", error: "Erreur IA" });
+=======
             const fallbackIdeas = "Idée 1|||Sujet simple###Idée 2|||Conseil pratique###Idée 3|||Retour d'expérience";
             if (String(e && e.message).includes("OpenAI API key missing")) {
                 sendResponse({ success: true, ideas: fallbackIdeas });
                 return;
             }
             sendResponse({ success: false, ideas: fallbackIdeas, error: "Erreur IA" });
+>>>>>>> codex/activer-cle-secrete-pour-fonctionnalites-76k82j
         }
       })();
       return true;
   }
   if (request.action === "WRITE_FINAL_POST") {
     (async () => {
+<<<<<<< HEAD
+        const r = await fetch("https://api.openai.com/v1/chat/completions", {
+            method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${API_KEY}` },
+                body: JSON.stringify({ model: "gpt-4o", messages: [{role:"user", content: `IDENTITÉ:${request.persona}. SUJET:"${request.angle}". Rédige un post complet, concret et spécifique.`}], temperature: 0.7 })
+        });
+        const d = await r.json();
+        sendResponse({ success: true, post: d.choices[0].message.content });
+=======
         try {
             const { ok, data, error } = await fetchOpenAI({
                 model: "gpt-4o",
@@ -166,6 +409,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         } catch (e) {
             sendResponse({ success: false, post: "", error: "Erreur IA" });
         }
+>>>>>>> codex/activer-cle-secrete-pour-fonctionnalites-76k82j
     })();
     return true;
   }
@@ -187,6 +431,49 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "QUEUE_UPDATED") {
       scheduleNextPost();
       sendResponse({ success: true });
+      return true;
+  }
+  if (request.action === "START_AUTO_HUNT") {
+      (async () => {
+          const settings = request.settings || {};
+          const category = request.category || settings.defaultCategory || "Freelance marketing";
+          const response = await runHunter({ category, settings, consentGiven: request.consentGiven });
+          sendResponse(response);
+      })();
+      return true;
+  }
+  if (request.action === "IMPORT_HUNT_URL") {
+      (async () => {
+          const settings = request.settings || {};
+          const category = settings.defaultCategory || "Freelance marketing";
+          const response = await runHunter({ url: request.url, category, settings, consentGiven: request.consentGiven });
+          sendResponse(response);
+      })();
+      return true;
+  }
+  if (request.action === "ADD_TARGETS") {
+      (async () => {
+          const candidates = request.candidates || [];
+          const targets = await getTargets();
+          const existing = new Set(targets.map(t => t.profileUrl));
+          const additions = candidates.filter(c => c.profileUrl && !existing.has(c.profileUrl)).map(c => ({
+              id: Date.now() + Math.floor(Math.random() * 1000),
+              profileUrl: c.profileUrl,
+              fullName: c.fullName,
+              headline: c.headline,
+              category: c.category || "Manual",
+              addedAt: Date.now()
+          }));
+          await setTargets(targets.concat(additions));
+          sendResponse({ success: true, added: additions.length });
+      })();
+      return true;
+  }
+  if (request.action === "CONNECT_TARGET") {
+      (async () => {
+          const response = await connectToProfile(request.profileUrl);
+          sendResponse(response);
+      })();
       return true;
   }
 });

@@ -119,6 +119,9 @@
       background:#fff;
       border-radius:10px;
       font-size:12px;
+<<<<<<< HEAD
+    }
+=======
       display:flex;
       align-items:flex-start;
       justify-content:space-between;
@@ -135,6 +138,7 @@
       color:#991b1b;
     }
     .queue-delete:hover{background:#fecaca;}
+>>>>>>> codex/activer-cle-secrete-pour-fonctionnalites-76k82j
     .btn-secondary{background:#e5e7eb;color:#111827;}
     .btn-secondary:hover{background:#d1d5db;}
     .btn-success{background:var(--success);}
@@ -152,6 +156,7 @@
     <button class="nav-btn" id="nav_id">Identité</button>
     <button class="nav-btn" id="nav_com">Réponses</button>
     <button class="nav-btn" id="nav_post">Éditeur</button>
+    <button class="nav-btn" id="nav_reseau">Réseau</button>
     <button class="nav-btn" id="nav_queue">Planning</button>
   </div>
   
@@ -176,6 +181,12 @@
             <label for="prompt_box">Persona</label>
             <textarea id="prompt_box" style="height:120px;"></textarea>
             <button id="btn_save">Sauver</button>
+        </div>
+        <div class="section">
+            <label for="input_api_key">Clé OpenAI</label>
+            <input id="input_api_key" type="password" placeholder="sk-..." autocomplete="off">
+            <p class="muted">Clé stockée localement (sync si disponible) pour activer les fonctionnalités IA.</p>
+            <button id="btn_save_api_key" class="btn-secondary">Sauver la clé</button>
         </div>
     </div>
     <div id="tab_com" class="tab">
@@ -202,6 +213,50 @@
             <button id="btn_pub_now" class="btn-danger">Publier Maintenant</button>
         </div>
     </div>
+    <div id="tab_reseau" class="tab">
+        <h3>Réseau</h3>
+        <div class="section">
+            <h4>Chasse</h4>
+            <label for="hunter_category">Catégorie</label>
+            <select id="hunter_category"></select>
+            <label for="hunter_custom_query">Requête personnalisée</label>
+            <input id="hunter_custom_query" placeholder="ex: freelance marketing paris">
+            <label for="hunter_location">Lieu</label>
+            <input id="hunter_location" placeholder="ex: Paris">
+            <label for="hunter_language">Langue</label>
+            <input id="hunter_language" placeholder="ex: Français">
+            <label for="hunter_include">Mots-clés à inclure</label>
+            <input id="hunter_include" placeholder="ex: growth, B2B">
+            <label for="hunter_exclude">Mots-clés à exclure</label>
+            <input id="hunter_exclude" placeholder="ex: stagiaire">
+            <label for="hunter_max">Profils max / session</label>
+            <input id="hunter_max" type="number" min="1" max="100" value="30">
+            <label>
+                <input type="checkbox" id="hunter_auto_connect">
+                Ajouter automatiquement les profils (connexion) après la chasse.
+            </label>
+            <label>
+                <input type="checkbox" id="hunter_consent">
+                J'ai l'autorisation de lancer la chasse automatique.
+            </label>
+            <button id="btn_hunter_start" class="btn-accent">Lancer chasse auto</button>
+            <label for="hunter_url">Importer depuis URL</label>
+            <input id="hunter_url" placeholder="https://www.linkedin.com/search/results/people/">
+            <button id="btn_hunter_import" class="btn-secondary">Importer depuis URL</button>
+            <p class="muted" id="hunter_status">Aucune chasse en cours.</p>
+        </div>
+        <div class="section">
+            <h4>Candidates</h4>
+            <div id="hunter_candidates"></div>
+            <button id="btn_hunter_add" class="btn-success">Ajouter aux cibles</button>
+        </div>
+        <div class="section">
+            <h4>Base de données</h4>
+            <p class="muted">Liste des profils détectés par catégorie.</p>
+            <div id="hunter_targets"></div>
+            <button id="btn_hunter_refresh" class="btn-secondary">Rafraîchir</button>
+        </div>
+    </div>
     <div id="tab_queue" class="tab">
         <h3>File d'attente</h3>
         <div class="section">
@@ -210,6 +265,7 @@
         </div>
     </div>
   </div>
+  <script src="hunter_queries.js"></script>
   <script src="dashboard.js"></script>
 </body>
 </html>
