@@ -1,4 +1,4 @@
-document.addEventListener('DOMContentLoaded', () => {
+const initDashboard = () => {
 
     const map = { 'nav_id': 'tab_id', 'nav_com': 'tab_com', 'nav_radar': 'tab_radar', 'nav_post': 'tab_post', 'nav_reseau': 'tab_reseau', 'nav_queue': 'tab_queue' };
     const API_KEY_STORAGE_KEY = "openaiApiKey";
@@ -543,4 +543,10 @@ document.addEventListener('DOMContentLoaded', () => {
             loadTargets();
         });
     }
-});
+};
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initDashboard);
+} else {
+    initDashboard();
+}
