@@ -133,6 +133,7 @@ const parseJsonSafe = (text) => {
 
 const buildHunterSearchUrl = (category, settings) => {
     const query = buildHunterQuery(category, settings.customQuery, settings);
+    if (!query) return null;
     return buildLinkedInSearchUrl(query);
 };
 
@@ -179,6 +180,9 @@ const runHunter = async ({ url, category, settings, consentGiven }) => {
         return { success: false, error: "Consentement requis pour lancer la chasse." };
     }
     const searchUrl = url || buildHunterSearchUrl(category, settings);
+    if (!searchUrl) {
+        return { success: false, error: "Veuillez saisir un mot-clé ou une requête personnalisée." };
+    }
     const tabId = await new Promise(resolve => {
         chrome.tabs.create({ url: searchUrl, active: false }, tab => resolve(tab.id));
     });
@@ -215,13 +219,29 @@ const runHunter = async ({ url, category, settings, consentGiven }) => {
     const addedTargets = [];
     const newRejected = [];
 
+    const apiKey = await getApiKey();
+    const useAI = Boolean(apiKey);
+
     for (const candidate of filteredCandidates) {
         candidate.category = category;
+        if (!useAI) {
+            addedTargets.push({
+                id: Date.now() + Math.floor(Math.random() * 1000),
+                profileUrl: candidate.profileUrl,
+                fullName: candidate.fullName,
+                headline: candidate.headline,
+                category,
+                addedAt: Date.now()
+            });
+            candidate.reason = "Ajout direct (IA désactivée)";
+            candidate.prechecked = true;
+            continue;
+        }
         const { ok, data, error } = await fetchOpenAI({
             model: "gpt-4o",
             messages: [{
                 role: "user",
-                content: `Catégorie: ${category}\nProfil: ${candidate.fullName}\nHeadline: ${candidate.headline || ""}\nObjectif: ${settings.includeKeywords || ""}\nRéponds au format JSON strict: {"relevant": true/false, "reason": "...", "tag": "..."}.`
+                content: `Mot-clé: ${category}\nProfil: ${candidate.fullName}\nHeadline: ${candidate.headline || ""}\nObjectif: ${settings.includeKeywords || ""}\nRéponds au format JSON strict: {"relevant": true/false, "reason": "...", "tag": "..."}.`
             }],
             temperature: 0.2
         });
