@@ -312,10 +312,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 b.onclick = () => {
                     document.getElementById('input_final').value = "Rédaction...";
                     chrome.runtime.sendMessage({action:"WRITE_FINAL_POST", angle:i, persona:promptBox.value}, res => {
+<<<<<<< HEAD
+=======
                         if (res && res.error) {
                             alert(res.error);
                             return;
                         }
+>>>>>>> codex/activer-cle-secrete-pour-fonctionnalites-76k82j
                         document.getElementById('input_final').value = res.post;
                     });
                 };
