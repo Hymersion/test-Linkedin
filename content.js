@@ -62,6 +62,29 @@ if (!window.ghostlyLoaded) {
     };
 
     const normalize = (str) => str.replace(/\s+/g, ' ').trim().toLowerCase();
+    const selectors = window.GHOSTLY_SELECTORS || { search: { main: "main", profileLink: "a[href*=\"/in/\"]", profileCard: "li, div" }, auth: { loginForm: "form[action*=\"login\"], input[name=\"session_key\"], input#username" } };
+    const isLoginPage = () => Boolean(document.querySelector(selectors.auth.loginForm)) || window.location.href.includes("linkedin.com/login");
+
+    const getCandidateCard = (linkEl) => {
+        if (!linkEl) return null;
+        let card = linkEl.closest(selectors.search.profileCard);
+        if (!card) card = linkEl.parentElement;
+        return card || linkEl;
+    };
+
+    const extractCandidate = (linkEl) => {
+        if (!linkEl) return null;
+        const profileUrl = linkEl.href ? linkEl.href.split("?")[0] : "";
+        if (!profileUrl.includes("/in/")) return null;
+        const card = getCandidateCard(linkEl);
+        const fullName = linkEl.innerText.trim() || linkEl.getAttribute("aria-label") || "Profil LinkedIn";
+        let headline = "";
+        if (card) {
+            const ariaText = card.querySelector('[aria-hidden="true"]');
+            if (ariaText) headline = ariaText.innerText.trim();
+        }
+        return { profileUrl, fullName, headline };
+    };
 
     chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         
@@ -333,6 +356,28 @@ if (!window.ghostlyLoaded) {
                 } catch (e) {
                     sendResponse({ success: false, error: "Profile scrape failed." });
                 }
+            })();
+            return true;
+        }
+        if (request.action === "SCRAPE_SEARCH_RESULTS") {
+            (async () => {
+                if (isLoginPage()) {
+                    sendResponse({ success: false, error: "Veuillez vous connecter à LinkedIn." });
+                    return;
+                }
+                const maxProfiles = Number(request.maxProfilesPerRun || 30);
+                const main = document.querySelector(selectors.search.main) || document;
+                const links = Array.from(main.querySelectorAll(selectors.search.profileLink));
+                const candidates = [];
+                const seen = new Set();
+                for (const linkEl of links) {
+                    const candidate = extractCandidate(linkEl);
+                    if (!candidate || seen.has(candidate.profileUrl)) continue;
+                    seen.add(candidate.profileUrl);
+                    candidates.push(candidate);
+                    if (candidates.length >= maxProfiles) break;
+                }
+                sendResponse({ success: true, candidates });
             })();
             return true;
         }

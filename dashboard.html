@@ -152,6 +152,7 @@
     <button class="nav-btn" id="nav_id">Identité</button>
     <button class="nav-btn" id="nav_com">Réponses</button>
     <button class="nav-btn" id="nav_post">Éditeur</button>
+    <button class="nav-btn" id="nav_reseau">Réseau</button>
     <button class="nav-btn" id="nav_queue">Planning</button>
   </div>
   
@@ -208,6 +209,40 @@
             <button id="btn_pub_now" class="btn-danger">Publier Maintenant</button>
         </div>
     </div>
+    <div id="tab_reseau" class="tab">
+        <h3>Réseau</h3>
+        <div class="section">
+            <h4>Chasse</h4>
+            <label for="hunter_category">Catégorie</label>
+            <select id="hunter_category"></select>
+            <label for="hunter_custom_query">Requête personnalisée</label>
+            <input id="hunter_custom_query" placeholder="ex: freelance marketing paris">
+            <label for="hunter_location">Lieu</label>
+            <input id="hunter_location" placeholder="ex: Paris">
+            <label for="hunter_language">Langue</label>
+            <input id="hunter_language" placeholder="ex: Français">
+            <label for="hunter_include">Mots-clés à inclure</label>
+            <input id="hunter_include" placeholder="ex: growth, B2B">
+            <label for="hunter_exclude">Mots-clés à exclure</label>
+            <input id="hunter_exclude" placeholder="ex: stagiaire">
+            <label for="hunter_max">Profils max / session</label>
+            <input id="hunter_max" type="number" min="1" max="100" value="30">
+            <label>
+                <input type="checkbox" id="hunter_consent">
+                J'ai l'autorisation de lancer la chasse automatique.
+            </label>
+            <button id="btn_hunter_start" class="btn-accent">Lancer chasse auto</button>
+            <label for="hunter_url">Importer depuis URL</label>
+            <input id="hunter_url" placeholder="https://www.linkedin.com/search/results/people/">
+            <button id="btn_hunter_import" class="btn-secondary">Importer depuis URL</button>
+            <p class="muted" id="hunter_status">Aucune chasse en cours.</p>
+        </div>
+        <div class="section">
+            <h4>Candidates</h4>
+            <div id="hunter_candidates"></div>
+            <button id="btn_hunter_add" class="btn-success">Ajouter aux cibles</button>
+        </div>
+    </div>
     <div id="tab_queue" class="tab">
         <h3>File d'attente</h3>
         <div class="section">
@@ -216,6 +251,7 @@
         </div>
     </div>
   </div>
+  <script src="hunter_queries.js"></script>
   <script src="dashboard.js"></script>
 </body>
 </html>

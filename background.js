@@ -1,5 +1,11 @@
+importScripts('hunter_queries.js');
+
 const API_KEY_STORAGE_KEY = "openaiApiKey";
+const TARGETS_KEY = "targets";
+const REJECTED_KEY = "rejected";
+const HUNTER_CONSENT_KEY = "consentGiven";
 const QUEUE_ALARM = "ghostly-post-queue";
+const CONTENT_SCRIPT_FILES = ['selectors.js', 'content.js'];
 
 const getApiKey = () => new Promise(resolve => {
     chrome.storage.sync.get([API_KEY_STORAGE_KEY], syncResult => {
@@ -20,6 +26,22 @@ const getQueue = () => new Promise(resolve => {
 
 const setQueue = (queue) => new Promise(resolve => {
     chrome.storage.local.set({ postQueue: queue }, resolve);
+});
+
+const getTargets = () => new Promise(resolve => {
+    chrome.storage.local.get([TARGETS_KEY], r => resolve(r[TARGETS_KEY] || []));
+});
+
+const setTargets = (targets) => new Promise(resolve => {
+    chrome.storage.local.set({ [TARGETS_KEY]: targets }, resolve);
+});
+
+const getRejected = () => new Promise(resolve => {
+    chrome.storage.local.get([REJECTED_KEY], r => resolve(r[REJECTED_KEY] || []));
+});
+
+const setRejected = (rejected) => new Promise(resolve => {
+    chrome.storage.local.set({ [REJECTED_KEY]: rejected }, resolve);
 });
 
 const fetchOpenAI = async (payload) => {
@@ -66,7 +88,7 @@ const openLinkedInAndPost = async (content) => new Promise(resolve => {
             if (updatedTabId === tabId && info.status === "complete") {
                 chrome.tabs.onUpdated.removeListener(onUpdated);
                 try {
-                    await chrome.scripting.executeScript({ target: { tabId }, files: ['content.js'] });
+                    await chrome.scripting.executeScript({ target: { tabId }, files: CONTENT_SCRIPT_FILES });
                     chrome.tabs.sendMessage(tabId, { action: "WRITE_POST_ON_LINKEDIN", content, autoPost: true }, () => {
                         resolve(true);
                         chrome.tabs.remove(tabId);
@@ -100,6 +122,132 @@ function clean(text) {
     if (!text) return "";
     return text.replace(/^(Score|Note|Analyse|Evaluation).*?$/gim, "").replace(/\d+\/\d+/g, "").replace(/"/g, "").trim();
 }
+
+const parseJsonSafe = (text) => {
+    try {
+        return JSON.parse(text);
+    } catch (e) {
+        return null;
+    }
+};
+
+const buildHunterSearchUrl = (category, settings) => {
+    const query = buildHunterQuery(category, settings.customQuery, settings);
+    return buildLinkedInSearchUrl(query);
+};
+
+const ensureConsent = async (consentGiven) => {
+    if (consentGiven) return true;
+    const stored = await new Promise(resolve => {
+        chrome.storage.local.get([HUNTER_CONSENT_KEY], r => resolve(Boolean(r[HUNTER_CONSENT_KEY])));
+    });
+    return stored;
+};
+
+const extractAiDecision = (content) => {
+    const parsed = parseJsonSafe(content);
+    if (parsed && typeof parsed.relevant === "boolean") return parsed;
+    return { relevant: false, reason: "Réponse IA invalide", tag: "invalid" };
+};
+
+const runHunter = async ({ url, category, settings, consentGiven }) => {
+    const hasConsent = await ensureConsent(consentGiven);
+    if (!hasConsent) {
+        return { success: false, error: "Consentement requis pour lancer la chasse." };
+    }
+    const searchUrl = url || buildHunterSearchUrl(category, settings);
+    const tabId = await new Promise(resolve => {
+        chrome.tabs.create({ url: searchUrl, active: false }, tab => resolve(tab.id));
+    });
+
+    const waitForTabComplete = () => new Promise(resolve => {
+        const onUpdated = (updatedTabId, info) => {
+            if (updatedTabId === tabId && info.status === "complete") {
+                chrome.tabs.onUpdated.removeListener(onUpdated);
+                resolve();
+            }
+        };
+        chrome.tabs.onUpdated.addListener(onUpdated);
+    });
+
+    await waitForTabComplete();
+    await chrome.scripting.executeScript({ target: { tabId }, files: CONTENT_SCRIPT_FILES });
+
+    const scrapeResult = await new Promise(resolve => {
+        chrome.tabs.sendMessage(tabId, { action: "SCRAPE_SEARCH_RESULTS", maxProfilesPerRun: settings.maxProfilesPerRun || 30 }, resolve);
+    });
+
+    if (!scrapeResult || !scrapeResult.success) {
+        chrome.tabs.remove(tabId);
+        return { success: false, error: scrapeResult && scrapeResult.error ? scrapeResult.error : "Scrape échoué." };
+    }
+
+    const targets = await getTargets();
+    const rejected = await getRejected();
+    const existingUrls = new Set(targets.map(t => t.profileUrl));
+    const rejectedUrls = new Set(rejected.map(r => r.profileUrl));
+    const candidates = scrapeResult.candidates || [];
+    const filteredCandidates = candidates.filter(c => !existingUrls.has(c.profileUrl) && !rejectedUrls.has(c.profileUrl));
+
+    const addedTargets = [];
+    const newRejected = [];
+
+    for (const candidate of filteredCandidates) {
+        candidate.category = category;
+        const { ok, data, error } = await fetchOpenAI({
+            model: "gpt-4o",
+            messages: [{
+                role: "user",
+                content: `Catégorie: ${category}\nProfil: ${candidate.fullName}\nHeadline: ${candidate.headline || ""}\nObjectif: ${settings.includeKeywords || ""}\nRéponds au format JSON strict: {"relevant": true/false, "reason": "...", "tag": "..."}.`
+            }],
+            temperature: 0.2
+        });
+        if (!ok) {
+            newRejected.push({
+                profileUrl: candidate.profileUrl,
+                reason: error || "Erreur IA",
+                category,
+                rejectedAt: Date.now()
+            });
+            continue;
+        }
+        const content = data && data.choices && data.choices[0] && data.choices[0].message
+            ? data.choices[0].message.content
+            : "";
+        const decision = extractAiDecision(content);
+        if (decision.relevant) {
+            addedTargets.push({
+                id: Date.now() + Math.floor(Math.random() * 1000),
+                profileUrl: candidate.profileUrl,
+                fullName: candidate.fullName,
+                headline: candidate.headline,
+                category,
+                addedAt: Date.now()
+            });
+            candidate.reason = decision.reason;
+            candidate.prechecked = true;
+        } else {
+            newRejected.push({
+                profileUrl: candidate.profileUrl,
+                reason: decision.reason,
+                category,
+                rejectedAt: Date.now()
+            });
+            candidate.reason = decision.reason;
+        }
+    }
+
+    await setTargets(targets.concat(addedTargets));
+    await setRejected(rejected.concat(newRejected));
+    chrome.tabs.remove(tabId);
+
+    return {
+        success: true,
+        added: addedTargets.length,
+        rejected: newRejected.length,
+        candidates: filteredCandidates
+    };
+};
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   // RADAR
@@ -201,6 +349,42 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "QUEUE_UPDATED") {
       scheduleNextPost();
       sendResponse({ success: true });
+      return true;
+  }
+  if (request.action === "START_AUTO_HUNT") {
+      (async () => {
+          const settings = request.settings || {};
+          const category = request.category || settings.defaultCategory || "Freelance marketing";
+          const response = await runHunter({ category, settings, consentGiven: request.consentGiven });
+          sendResponse(response);
+      })();
+      return true;
+  }
+  if (request.action === "IMPORT_HUNT_URL") {
+      (async () => {
+          const settings = request.settings || {};
+          const category = settings.defaultCategory || "Freelance marketing";
+          const response = await runHunter({ url: request.url, category, settings, consentGiven: request.consentGiven });
+          sendResponse(response);
+      })();
+      return true;
+  }
+  if (request.action === "ADD_TARGETS") {
+      (async () => {
+          const candidates = request.candidates || [];
+          const targets = await getTargets();
+          const existing = new Set(targets.map(t => t.profileUrl));
+          const additions = candidates.filter(c => c.profileUrl && !existing.has(c.profileUrl)).map(c => ({
+              id: Date.now() + Math.floor(Math.random() * 1000),
+              profileUrl: c.profileUrl,
+              fullName: c.fullName,
+              headline: c.headline,
+              category: c.category || "Manual",
+              addedAt: Date.now()
+          }));
+          await setTargets(targets.concat(additions));
+          sendResponse({ success: true, added: additions.length });
+      })();
       return true;
   }
 });
