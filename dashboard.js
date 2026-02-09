@@ -50,6 +50,17 @@ const initDashboard = () => {
     const autoTargetsStart = document.getElementById('btn_auto_targets_start');
     const autoScheduleTimeButtons = document.querySelectorAll('[data-time]');
     const autoScheduleDayButtons = document.querySelectorAll('[data-day]');
+    const autoTabFeed = document.getElementById('auto_tab_feed');
+    const autoTabFollowed = document.getElementById('auto_tab_followed');
+    const radarTabSettings = document.getElementById('radar_tab_settings');
+    const radarTabTargets = document.getElementById('radar_tab_targets');
+    const autoSectionQuick = document.getElementById('auto_section_quick');
+    const autoSectionFeed = document.getElementById('auto_section_feed');
+    const autoSectionFollowed = document.getElementById('auto_section_followed');
+    const autoSectionVerify = document.getElementById('auto_section_verify');
+    const radarSectionHunt = document.getElementById('radar_section_hunt');
+    const radarSectionDb = document.getElementById('radar_section_db');
+    const radarSectionCandidates = document.getElementById('radar_section_candidates');
     let FOUND_COMS = [];
     let RADAR_OPPS = [];
     let HUNTER_LAST_CANDIDATES = [];
@@ -344,6 +355,53 @@ const initDashboard = () => {
             const days = Array.from(scheduleState.days).join(', ') || 'tous';
             setHunterStatus(`Planification: ${category} • ${scheduleState.frequency} • ${scheduleState.time} • ${days}`);
         });
+    }
+
+    const setDisplay = (el, visible) => {
+        if (!el) return;
+        el.style.display = visible ? 'block' : 'none';
+    };
+
+    const setActiveTabButtons = (activeBtn, otherBtn) => {
+        if (!activeBtn || !otherBtn) return;
+        activeBtn.classList.add('btn-accent');
+        activeBtn.classList.remove('btn-secondary');
+        otherBtn.classList.add('btn-secondary');
+        otherBtn.classList.remove('btn-accent');
+    };
+
+    if (autoTabFeed && autoTabFollowed) {
+        autoTabFeed.addEventListener('click', () => {
+            setActiveTabButtons(autoTabFeed, autoTabFollowed);
+            setDisplay(autoSectionQuick, true);
+            setDisplay(autoSectionFeed, true);
+            setDisplay(autoSectionFollowed, false);
+            setDisplay(autoSectionVerify, false);
+        });
+        autoTabFollowed.addEventListener('click', () => {
+            setActiveTabButtons(autoTabFollowed, autoTabFeed);
+            setDisplay(autoSectionQuick, false);
+            setDisplay(autoSectionFeed, false);
+            setDisplay(autoSectionFollowed, true);
+            setDisplay(autoSectionVerify, true);
+        });
+        autoTabFeed.click();
+    }
+
+    if (radarTabSettings && radarTabTargets) {
+        radarTabSettings.addEventListener('click', () => {
+            setActiveTabButtons(radarTabSettings, radarTabTargets);
+            setDisplay(radarSectionHunt, true);
+            setDisplay(radarSectionDb, false);
+            setDisplay(radarSectionCandidates, false);
+        });
+        radarTabTargets.addEventListener('click', () => {
+            setActiveTabButtons(radarTabTargets, radarTabSettings);
+            setDisplay(radarSectionHunt, false);
+            setDisplay(radarSectionDb, true);
+            setDisplay(radarSectionCandidates, true);
+        });
+        radarTabSettings.click();
     }
 
     loadHunterSettings();

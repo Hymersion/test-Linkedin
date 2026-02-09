@@ -160,6 +160,12 @@
     <div id="tab_radar" class="tab active">
         <h3>Auto-commentaire</h3>
         <div class="section">
+            <div class="row">
+                <button class="btn-secondary" id="auto_tab_feed">Scan mon fil</button>
+                <button class="btn-secondary" id="auto_tab_followed">Scan personnes suivies</button>
+            </div>
+        </div>
+        <div class="section" id="auto_section_quick">
             <h4>Actions rapides</h4>
             <div class="row">
                 <div>
@@ -178,7 +184,7 @@
             <div id="zone_coms"></div>
             <button id="btn_pub_all" class="btn-success" style="display:none;">Publier Tout</button>
         </div>
-        <div class="section">
+        <div class="section" id="auto_section_feed">
             <h4>Auto commentaire du fil + Like</h4>
             <div class="row">
                 <button class="btn-secondary" type="button" data-feed-frequency="10">10 min</button>
@@ -194,7 +200,7 @@
             </div>
             <button class="btn-secondary" id="btn_auto_feed_start">Démarrer</button>
         </div>
-        <div class="section">
+        <div class="section" id="auto_section_followed">
             <h4>Auto commentaire des profils suivis</h4>
             <label for="auto_targets_category_select">Catégorie suivie</label>
             <select id="auto_targets_category_select">
@@ -228,7 +234,7 @@
             </div>
             <p class="muted">Choisissez la catégorie, la fréquence, l’heure et les jours.</p>
         </div>
-        <div class="section">
+        <div class="section" id="auto_section_verify">
             <h4>Validation des commentaires</h4>
             <div id="auto_comment_preview"></div>
             <div class="row">
@@ -274,6 +280,12 @@
     <div id="tab_reseau" class="tab">
         <h3>Radar</h3>
         <div class="section">
+            <div class="row">
+                <button class="btn-secondary" id="radar_tab_settings">Paramétrage radar</button>
+                <button class="btn-secondary" id="radar_tab_targets">Gérer mes suivis</button>
+            </div>
+        </div>
+        <div class="section" id="radar_section_hunt">
             <h4>Chasse intelligente</h4>
             <label for="hunter_keyword">Mot-clé principal</label>
             <input id="hunter_keyword" placeholder="ex: médecin, business angel">
@@ -305,25 +317,7 @@
             <button id="btn_hunter_import" class="btn-secondary">Importer depuis URL</button>
             <p class="muted" id="hunter_status">Aucune chasse en cours.</p>
         </div>
-        <div class="section">
-            <h4>Auto commentaire + Like des profils suivis</h4>
-            <div class="row">
-                <input id="auto_targets_frequency" placeholder="Fréquence / semaine (ex: 3)">
-                <input id="auto_targets_days" placeholder="Jours (ex: Lun, Jeu)">
-            </div>
-            <div class="row">
-                <select id="auto_targets_scope">
-                    <option value="all">Toutes les catégories</option>
-                    <option value="single">Une seule catégorie</option>
-                    <option value="group">Groupe personnalisé</option>
-                </select>
-                <input id="auto_targets_category" placeholder="Catégorie (ex: médecins)">
-            </div>
-            <input id="auto_targets_list" placeholder="Groupe personnalisé (URLs séparées par ,)">
-            <button class="btn-secondary" id="btn_auto_targets_start">Démarrer</button>
-            <p class="muted">L’IA ouvre les profils suivis, analyse les posts récents et propose (ou non) des commentaires selon vos objectifs.</p>
-        </div>
-        <div class="section">
+        <div class="section" id="radar_section_db">
             <h4>Base de données</h4>
             <p class="muted">Liste des profils détectés par catégorie.</p>
             <div id="hunter_categories"></div>
@@ -339,7 +333,7 @@
             <div id="hunter_targets"></div>
             <button id="btn_hunter_refresh" class="btn-secondary">Rafraîchir</button>
         </div>
-        <div class="section">
+        <div class="section" id="radar_section_candidates">
             <h4>Candidates</h4>
             <div id="hunter_candidates"></div>
             <button id="btn_hunter_add" class="btn-success">Ajouter aux cibles</button>
