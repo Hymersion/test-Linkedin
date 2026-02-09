@@ -1,34 +1,281 @@
-document.addEventListener('DOMContentLoaded', () => {
+const initDashboard = () => {
 
-    const map = { 'nav_id': 'tab_id', 'nav_com': 'tab_com', 'nav_radar': 'tab_radar', 'nav_post': 'tab_post', 'nav_queue': 'tab_queue' };
+    const map = { 'nav_id': 'tab_id', 'nav_com': 'tab_com', 'nav_radar': 'tab_radar', 'nav_post': 'tab_post', 'nav_reseau': 'tab_reseau', 'nav_queue': 'tab_queue' };
+    const API_KEY_STORAGE_KEY = "openaiApiKey";
+    const HUNTER_SETTINGS_KEY = "hunterSettings";
+    const HUNTER_CONSENT_KEY = "consentGiven";
+    const onClick = (id, handler) => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('click', handler);
+        return el;
+    };
+
     Object.keys(map).forEach(navId => {
-        document.getElementById(navId).addEventListener('click', () => {
+        const el = document.getElementById(navId);
+        if (!el) return;
+        el.addEventListener('click', () => {
             document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-            document.getElementById(navId).classList.add('active');
-            document.getElementById(map[navId]).classList.add('active');
+            el.classList.add('active');
+            const targetTab = document.getElementById(map[navId]);
+            if (targetTab) targetTab.classList.add('active');
             if(navId === 'nav_queue') loadQueue();
         });
     });
 
     const promptBox = document.getElementById('prompt_box');
+    const apiKeyInput = document.getElementById('input_api_key');
+    const hunterKeyword = document.getElementById('hunter_keyword');
+    const hunterCustomQuery = document.getElementById('hunter_custom_query');
+    const hunterLocation = document.getElementById('hunter_location');
+    const hunterLanguage = document.getElementById('hunter_language');
+    const hunterInclude = document.getElementById('hunter_include');
+    const hunterExclude = document.getElementById('hunter_exclude');
+    const hunterMax = document.getElementById('hunter_max');
+    const hunterMaxAdd = document.getElementById('hunter_max_add');
+    const hunterAutoConnect = document.getElementById('hunter_auto_connect');
+    const hunterConsent = document.getElementById('hunter_consent');
+    const hunterStatus = document.getElementById('hunter_status');
+    const hunterCandidates = document.getElementById('hunter_candidates');
+    const hunterUrl = document.getElementById('hunter_url');
+    const hunterAddBtn = document.getElementById('btn_hunter_add');
+    const hunterTargets = document.getElementById('hunter_targets');
+    const hunterRefreshBtn = document.getElementById('btn_hunter_refresh');
+    const hunterCategories = document.getElementById('hunter_categories');
+    const hunterSort = document.getElementById('hunter_sort');
+    const hunterFilterLetter = document.getElementById('hunter_filter_letter');
     let FOUND_COMS = [];
     let RADAR_OPPS = [];
+    let HUNTER_LAST_CANDIDATES = [];
 
-    chrome.storage.local.get(['persona'], r => {
-        if (promptBox) promptBox.value = r.persona || "Expert.";
-    });
+    const chromeAvailable = typeof chrome !== "undefined" && chrome.storage && chrome.runtime;
+
+    if (chromeAvailable) {
+        chrome.storage.local.get(['persona'], r => {
+            if (promptBox) promptBox.value = r.persona || "Expert.";
+        });
+    }
+
+    const loadApiKey = () => {
+        if (!apiKeyInput) return;
+        if (!chromeAvailable) return;
+        chrome.storage.sync.get([API_KEY_STORAGE_KEY], syncResult => {
+            const syncKey = (syncResult[API_KEY_STORAGE_KEY] || "").trim();
+            if (syncKey) {
+                apiKeyInput.value = syncKey;
+                return;
+            }
+            chrome.storage.local.get([API_KEY_STORAGE_KEY], localResult => {
+                apiKeyInput.value = (localResult[API_KEY_STORAGE_KEY] || "").trim();
+            });
+        });
+    };
+
+    loadApiKey();
+
+    const loadHunterSettings = () => {
+        if (!chromeAvailable) return;
+        chrome.storage.local.get([HUNTER_SETTINGS_KEY, HUNTER_CONSENT_KEY], r => {
+            const settings = r[HUNTER_SETTINGS_KEY] || {};
+            if (hunterKeyword) hunterKeyword.value = settings.keyword || "";
+            if (hunterCustomQuery) hunterCustomQuery.value = settings.customQuery || "";
+            if (hunterLocation) hunterLocation.value = settings.location || "";
+            if (hunterLanguage) hunterLanguage.value = settings.language || "";
+            if (hunterInclude) hunterInclude.value = settings.includeKeywords || "";
+            if (hunterExclude) hunterExclude.value = settings.excludeKeywords || "";
+            if (hunterMax) hunterMax.value = settings.maxProfilesPerRun || 30;
+            if (hunterMaxAdd) hunterMaxAdd.value = settings.maxAddPerRun || 20;
+            if (hunterAutoConnect) hunterAutoConnect.checked = Boolean(settings.autoConnect);
+            if (hunterConsent) hunterConsent.checked = Boolean(r[HUNTER_CONSENT_KEY]);
+        });
+    };
+
+    const saveHunterSettings = () => {
+        const settings = {
+            keyword: hunterKeyword ? hunterKeyword.value.trim() : "",
+            customQuery: hunterCustomQuery ? hunterCustomQuery.value.trim() : "",
+            location: hunterLocation ? hunterLocation.value.trim() : "",
+            language: hunterLanguage ? hunterLanguage.value.trim() : "",
+            includeKeywords: hunterInclude ? hunterInclude.value.trim() : "",
+            excludeKeywords: hunterExclude ? hunterExclude.value.trim() : "",
+            maxProfilesPerRun: hunterMax ? Number(hunterMax.value || 30) : 30,
+            maxAddPerRun: hunterMaxAdd ? Number(hunterMaxAdd.value || 20) : 20,
+            autoConnect: hunterAutoConnect ? hunterAutoConnect.checked : false
+        };
+        if (chromeAvailable) {
+            chrome.storage.local.set({ [HUNTER_SETTINGS_KEY]: settings });
+        }
+        return settings;
+    };
+
+    const setHunterStatus = (text, isError = false) => {
+        if (!hunterStatus) return;
+        hunterStatus.textContent = text;
+        hunterStatus.style.color = isError ? "#dc2626" : "";
+    };
+
+    const renderHunterCandidates = (candidates) => {
+        if (!hunterCandidates) return;
+        hunterCandidates.innerHTML = "";
+        if (!candidates || candidates.length === 0) {
+            hunterCandidates.innerHTML = "<p class=\"muted\">Aucun candidat.</p>";
+            return;
+        }
+        candidates.forEach((c, idx) => {
+            const row = document.createElement('div');
+            row.className = "card";
+            row.innerHTML = `
+                <div style="display:flex; justify-content:space-between; gap:8px;">
+                    <div>
+                        <b>${c.fullName || "Profil"}</b><br>
+                        <span class="muted">${c.headline || ""}</span><br>
+                        <a href="${c.profileUrl}" target="_blank" rel="noopener noreferrer">${c.profileUrl}</a>
+                        ${c.reason ? `<div class="muted">IA: ${c.reason}</div>` : ""}
+                    </div>
+                    <div>
+                        <input type="checkbox" id="hunter-cand-${idx}" ${c.prechecked ? "checked" : ""}>
+                    </div>
+                </div>
+            `;
+            hunterCandidates.appendChild(row);
+        });
+    };
+
+    const applyTargetFilters = (targets) => {
+        const letter = hunterFilterLetter ? hunterFilterLetter.value.trim().toLowerCase() : "";
+        let nextTargets = targets.slice();
+        if (letter) {
+            nextTargets = nextTargets.filter(t => (t.fullName || "").toLowerCase().startsWith(letter));
+        }
+        const sortValue = hunterSort ? hunterSort.value : "date_desc";
+        if (sortValue === "date_asc") {
+            nextTargets.sort((a, b) => (a.addedAt || 0) - (b.addedAt || 0));
+        } else if (sortValue === "alpha_asc") {
+            nextTargets.sort((a, b) => (a.fullName || "").localeCompare(b.fullName || ""));
+        } else if (sortValue === "alpha_desc") {
+            nextTargets.sort((a, b) => (b.fullName || "").localeCompare(a.fullName || ""));
+        } else {
+            nextTargets.sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0));
+        }
+        return nextTargets;
+    };
+
+    let activeCategory = "Toutes";
+
+    const renderCategories = (grouped) => {
+        if (!hunterCategories) return;
+        const categories = Object.keys(grouped).sort();
+        hunterCategories.innerHTML = "";
+        const allButton = document.createElement('button');
+        allButton.className = "btn-secondary";
+        allButton.textContent = `Toutes (${categories.reduce((acc, key) => acc + grouped[key].length, 0)})`;
+        allButton.style.marginBottom = "6px";
+        allButton.onclick = () => {
+            activeCategory = "Toutes";
+            loadTargets();
+        };
+        hunterCategories.appendChild(allButton);
+        categories.forEach(category => {
+            const btn = document.createElement('button');
+            btn.className = "btn-secondary";
+            btn.style.marginBottom = "6px";
+            btn.textContent = `${category} (${grouped[category].length})`;
+            btn.onclick = () => {
+                activeCategory = category;
+                loadTargets();
+            };
+            hunterCategories.appendChild(btn);
+        });
+    };
+
+    const renderTargets = (targets) => {
+        if (!hunterTargets) return;
+        hunterTargets.innerHTML = "";
+        const grouped = (targets || []).reduce((acc, t) => {
+            const key = t.category || "Sans catégorie";
+            if (!acc[key]) acc[key] = [];
+            acc[key].push(t);
+            return acc;
+        }, {});
+        const categoryKeys = Object.keys(grouped);
+        renderCategories(grouped);
+        if (categoryKeys.length === 0) {
+            hunterTargets.innerHTML = "<p class=\"muted\">Aucune cible enregistrée.</p>";
+            return;
+        }
+        const filteredKeys = activeCategory === "Toutes"
+            ? categoryKeys.sort()
+            : categoryKeys.filter(key => key === activeCategory);
+        filteredKeys.forEach(category => {
+            const header = document.createElement('div');
+            header.className = "card";
+            header.innerHTML = `<b>${category}</b> <span class="muted">(${grouped[category].length})</span>`;
+            hunterTargets.appendChild(header);
+            const filtered = applyTargetFilters(grouped[category]);
+            filtered.forEach((t) => {
+                const row = document.createElement('div');
+                row.className = "card";
+                row.innerHTML = `
+                    <div style="display:flex; justify-content:space-between; gap:8px;">
+                        <div>
+                            <b>${t.fullName || "Profil"}</b><br>
+                            <span class="muted">${t.headline || ""}</span><br>
+                            <span class="muted">Ajouté: ${t.addedAt ? new Date(t.addedAt).toLocaleString() : "N/A"}</span><br>
+                            <span class="muted">Commentaires: ${t.commentsCount || 0}</span><br>
+                            <span class="muted">Récap: ${Array.isArray(t.commentsSummary) && t.commentsSummary.length ? t.commentsSummary.join(" • ") : "Aucun"}</span><br>
+                            <a href="${t.profileUrl}" target="_blank" rel="noopener noreferrer">${t.profileUrl}</a>
+                        </div>
+                        <div>
+                            <button class="btn-secondary" data-connect="${t.profileUrl}">🔗</button>
+                        </div>
+                    </div>
+                `;
+                hunterTargets.appendChild(row);
+            });
+        });
+        hunterTargets.querySelectorAll('[data-connect]').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const url = e.currentTarget.dataset.connect;
+                if (!url) return;
+                if (!chromeAvailable) {
+                    setHunterStatus("Fonctionnalité indisponible hors extension.", true);
+                    return;
+                }
+                chrome.runtime.sendMessage({ action: "CONNECT_TARGET", profileUrl: url }, response => {
+                    if (!response || !response.success) {
+                        setHunterStatus(response && response.error ? response.error : "Connexion échouée.", true);
+                        return;
+                    }
+                    setHunterStatus("Demande de connexion envoyée.");
+                });
+            });
+        });
+    };
+
+    const loadTargets = () => {
+        if (!chromeAvailable) return;
+        chrome.storage.local.get(['targets'], r => {
+            renderTargets(r.targets || []);
+        });
+    };
+
+    loadHunterSettings();
+    loadTargets();
 
     function nav(key, url, cb) {
+        if (!chromeAvailable) {
+            alert("Fonctionnalité indisponible hors extension.");
+            return;
+        }
         chrome.tabs.query({active:true, currentWindow:true}, async t => {
             if(t[0].url.includes(key)) {
-                await chrome.scripting.executeScript({target:{tabId:t[0].id}, files:['content.js']});
+                await chrome.scripting.executeScript({target:{tabId:t[0].id}, files:['selectors.js', 'content.js']});
                 cb(t[0].id);
             } else {
                 alert("Redirection...");
                 await chrome.tabs.update(t[0].id, {url: url});
                 setTimeout(async()=>{
-                    await chrome.scripting.executeScript({target:{tabId:t[0].id}, files:['content.js']});
+                    await chrome.scripting.executeScript({target:{tabId:t[0].id}, files:['selectors.js', 'content.js']});
                     cb(t[0].id);
                 }, 4000);
             }
@@ -36,7 +283,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- SCAN POST UNIQUE ---
-    document.getElementById('btn_scan_post').addEventListener('click', () => {
+    onClick('btn_scan_post', () => {
         const u = document.getElementById('input_url').value;
         nav(u.split('?')[0], u, tid => {
             chrome.tabs.sendMessage(tid, {action:"START_SCAN"}, r => {
@@ -73,7 +320,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     
     // PUBLICATION SELECTIVE
-    document.getElementById('btn_pub_all').addEventListener('click', () => {
+    onClick('btn_pub_all', () => {
         chrome.tabs.query({active:true}, async t => {
             alert("Publication de la sélection... (10s entre chaque)");
             for(let i=0; i<FOUND_COMS.length; i++) {
@@ -98,7 +345,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // --- RADAR ---
-    document.getElementById('btn_scan_radar').addEventListener('click', () => {
+    onClick('btn_scan_radar', () => {
         const time = document.getElementById('input_scroll').value;
         nav("linkedin.com/feed", "https://www.linkedin.com/feed/", tid => {
             alert("Radar lancé (Atomique)...");
@@ -125,7 +372,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    document.getElementById('btn_pub_radar').addEventListener('click', () => {
+    onClick('btn_pub_radar', () => {
         chrome.tabs.query({active:true}, async t => {
             alert("Envoi Radar...");
             for(let i=0; i<RADAR_OPPS.length; i++) {
@@ -139,7 +386,11 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // --- RESTE INCHANGE ---
-    document.getElementById('btn_ideas').addEventListener('click', () => {
+    onClick('btn_ideas', () => {
+        if (!chromeAvailable) {
+            alert("Fonctionnalité indisponible hors extension.");
+            return;
+        }
         chrome.runtime.sendMessage({action:"GENERATE_DAILY_IDEAS", persona:promptBox.value}, r => {
             if (r && r.error) {
                 alert(r.error);
@@ -162,16 +413,24 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    document.getElementById('btn_pub_now').addEventListener('click', () => {
+    onClick('btn_pub_now', () => {
+        if(!chromeAvailable) {
+            alert("Fonctionnalité indisponible hors extension.");
+            return;
+        }
         if(confirm("Publier ?")) nav("linkedin.com/feed", "https://www.linkedin.com/feed/", tid => {
             chrome.tabs.sendMessage(tid, {action:"WRITE_POST_ON_LINKEDIN", content:document.getElementById('input_final').value, autoPost:true});
         });
     });
 
-    document.getElementById('btn_add_queue').addEventListener('click', () => {
+    onClick('btn_add_queue', () => {
         const txt = document.getElementById('input_final').value;
         const time = document.getElementById('schedule_time').value;
         if(!txt || !time) return alert("Remplir texte et date");
+        if (!chromeAvailable) {
+            alert("Fonctionnalité indisponible hors extension.");
+            return;
+        }
         chrome.storage.local.get(['postQueue'], r => {
             const q = r.postQueue || [];
             q.push({id: Date.now(), content: txt, timestamp: new Date(time).getTime(), sent: false});
@@ -185,6 +444,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function loadQueue() {
         const div = document.getElementById('list_queue'); div.innerHTML = "";
+        if (!chromeAvailable) return;
         chrome.storage.local.get(['postQueue'], r => {
             const q = r.postQueue || [];
             q.forEach(p => {
@@ -210,9 +470,13 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
     }
-    document.getElementById('btn_refresh_queue').addEventListener('click', loadQueue);
+    onClick('btn_refresh_queue', loadQueue);
     
-    document.getElementById('btn_scan_profile').addEventListener('click', () => {
+    onClick('btn_scan_profile', () => {
+        if (!chromeAvailable) {
+            alert("Fonctionnalité indisponible hors extension.");
+            return;
+        }
         nav("linkedin.com/in/", "https://www.linkedin.com/in/me/", tid => {
             chrome.tabs.sendMessage(tid, {action:"SCRAPE_MY_PROFILE"}, r => {
                 if(r && r.success) chrome.runtime.sendMessage({action:"BUILD_PERSONA", profile:r.data}, ai => {
@@ -224,5 +488,135 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
     });
-    document.getElementById('btn_save').addEventListener('click', () => chrome.storage.local.set({persona:promptBox.value}, ()=>alert("Sauvé")));
-});
+    onClick('btn_save', () => {
+        if (!chromeAvailable) {
+            alert("Fonctionnalité indisponible hors extension.");
+            return;
+        }
+        chrome.storage.local.set({persona:promptBox.value}, ()=>alert("Sauvé"));
+    });
+
+    if (apiKeyInput) {
+        onClick('btn_save_api_key', () => {
+            if (!chromeAvailable) {
+                alert("Fonctionnalité indisponible hors extension.");
+                return;
+            }
+            const apiKey = apiKeyInput.value.trim();
+            if (!apiKey) {
+                chrome.storage.sync.remove([API_KEY_STORAGE_KEY], () => {
+                    chrome.storage.local.remove([API_KEY_STORAGE_KEY], () => alert("Clé supprimée."));
+                });
+                return;
+            }
+            chrome.storage.sync.set({ [API_KEY_STORAGE_KEY]: apiKey }, () => {
+                chrome.storage.local.set({ [API_KEY_STORAGE_KEY]: apiKey }, () => alert("Clé sauvegardée."));
+            });
+        });
+    }
+
+    if (hunterConsent) {
+        hunterConsent.addEventListener('change', () => {
+            if (!chromeAvailable) return;
+            chrome.storage.local.set({ [HUNTER_CONSENT_KEY]: hunterConsent.checked });
+        });
+    }
+
+    const runHunter = (payload) => {
+        setHunterStatus("Chasse en cours...");
+        if (!chromeAvailable) {
+            setHunterStatus("Fonctionnalité indisponible hors extension.", true);
+            return;
+        }
+        chrome.runtime.sendMessage(payload, response => {
+            if (!response) {
+                setHunterStatus("Erreur: aucune réponse.", true);
+                return;
+            }
+            if (!response.success) {
+                setHunterStatus(response.error || "Erreur pendant la chasse.", true);
+                return;
+            }
+            HUNTER_LAST_CANDIDATES = response.candidates || [];
+            renderHunterCandidates(HUNTER_LAST_CANDIDATES);
+            loadTargets();
+            setHunterStatus(`Chasse terminée: ${response.added || 0} ajoutés, ${response.rejected || 0} rejetés.`);
+        });
+    };
+
+    const hunterStartBtn = document.getElementById('btn_hunter_start');
+    if (hunterStartBtn) {
+        hunterStartBtn.addEventListener('click', () => {
+            const settings = saveHunterSettings();
+            const category = settings.keyword || "Général";
+            runHunter({
+                action: "START_AUTO_HUNT",
+                category,
+                settings,
+                consentGiven: hunterConsent ? hunterConsent.checked : false
+            });
+        });
+    }
+
+    const hunterImportBtn = document.getElementById('btn_hunter_import');
+    if (hunterImportBtn) {
+        hunterImportBtn.addEventListener('click', () => {
+            const settings = saveHunterSettings();
+            const url = hunterUrl ? hunterUrl.value.trim() : "";
+            if (!url) {
+                setHunterStatus("Veuillez coller une URL LinkedIn.", true);
+                return;
+            }
+            runHunter({
+                action: "IMPORT_HUNT_URL",
+                url,
+                settings,
+                consentGiven: hunterConsent ? hunterConsent.checked : false
+            });
+        });
+    }
+
+    if (hunterAddBtn) {
+        hunterAddBtn.addEventListener('click', () => {
+            const selected = HUNTER_LAST_CANDIDATES.filter((c, idx) => {
+                const checkbox = document.getElementById(`hunter-cand-${idx}`);
+                return checkbox && checkbox.checked;
+            });
+            if (selected.length === 0) {
+                setHunterStatus("Aucun candidat sélectionné.", true);
+                return;
+            }
+            if (!chromeAvailable) {
+                setHunterStatus("Fonctionnalité indisponible hors extension.", true);
+                return;
+            }
+            chrome.runtime.sendMessage({ action: "ADD_TARGETS", candidates: selected }, response => {
+                if (!response || !response.success) {
+                    setHunterStatus("Erreur lors de l'ajout des cibles.", true);
+                    return;
+                }
+                loadTargets();
+                setHunterStatus(`Cibles ajoutées: ${response.added}.`);
+            });
+        });
+    }
+
+    if (hunterRefreshBtn) {
+        hunterRefreshBtn.addEventListener('click', () => {
+            loadTargets();
+        });
+    }
+
+    if (hunterSort) {
+        hunterSort.addEventListener('change', () => loadTargets());
+    }
+    if (hunterFilterLetter) {
+        hunterFilterLetter.addEventListener('input', () => loadTargets());
+    }
+};
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initDashboard);
+} else {
+    initDashboard();
+}
