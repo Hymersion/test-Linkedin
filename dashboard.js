@@ -41,6 +41,7 @@ const initDashboard = () => {
     const hunterAddBtn = document.getElementById('btn_hunter_add');
     const hunterTargets = document.getElementById('hunter_targets');
     const hunterRefreshBtn = document.getElementById('btn_hunter_refresh');
+    const hunterCategories = document.getElementById('hunter_categories');
     const hunterSort = document.getElementById('hunter_sort');
     const hunterFilterLetter = document.getElementById('hunter_filter_letter');
     let FOUND_COMS = [];
@@ -159,6 +160,34 @@ const initDashboard = () => {
         return nextTargets;
     };
 
+    let activeCategory = "Toutes";
+
+    const renderCategories = (grouped) => {
+        if (!hunterCategories) return;
+        const categories = Object.keys(grouped).sort();
+        hunterCategories.innerHTML = "";
+        const allButton = document.createElement('button');
+        allButton.className = "btn-secondary";
+        allButton.textContent = `Toutes (${categories.reduce((acc, key) => acc + grouped[key].length, 0)})`;
+        allButton.style.marginBottom = "6px";
+        allButton.onclick = () => {
+            activeCategory = "Toutes";
+            loadTargets();
+        };
+        hunterCategories.appendChild(allButton);
+        categories.forEach(category => {
+            const btn = document.createElement('button');
+            btn.className = "btn-secondary";
+            btn.style.marginBottom = "6px";
+            btn.textContent = `${category} (${grouped[category].length})`;
+            btn.onclick = () => {
+                activeCategory = category;
+                loadTargets();
+            };
+            hunterCategories.appendChild(btn);
+        });
+    };
+
     const renderTargets = (targets) => {
         if (!hunterTargets) return;
         hunterTargets.innerHTML = "";
@@ -169,11 +198,15 @@ const initDashboard = () => {
             return acc;
         }, {});
         const categoryKeys = Object.keys(grouped);
+        renderCategories(grouped);
         if (categoryKeys.length === 0) {
             hunterTargets.innerHTML = "<p class=\"muted\">Aucune cible enregistrée.</p>";
             return;
         }
-        categoryKeys.sort().forEach(category => {
+        const filteredKeys = activeCategory === "Toutes"
+            ? categoryKeys.sort()
+            : categoryKeys.filter(key => key === activeCategory);
+        filteredKeys.forEach(category => {
             const header = document.createElement('div');
             header.className = "card";
             header.innerHTML = `<b>${category}</b> <span class="muted">(${grouped[category].length})</span>`;
@@ -204,6 +237,10 @@ const initDashboard = () => {
             btn.addEventListener('click', (e) => {
                 const url = e.currentTarget.dataset.connect;
                 if (!url) return;
+                if (!chromeAvailable) {
+                    setHunterStatus("Fonctionnalité indisponible hors extension.", true);
+                    return;
+                }
                 chrome.runtime.sendMessage({ action: "CONNECT_TARGET", profileUrl: url }, response => {
                     if (!response || !response.success) {
                         setHunterStatus(response && response.error ? response.error : "Connexion échouée.", true);
