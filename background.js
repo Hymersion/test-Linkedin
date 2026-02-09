@@ -238,7 +238,9 @@ const runHunter = async ({ url, category, settings, consentGiven }) => {
                 fullName: candidate.fullName,
                 headline: candidate.headline,
                 category,
-                addedAt: Date.now()
+                addedAt: Date.now(),
+                commentsCount: 0,
+                commentsSummary: []
             });
             candidate.reason = "Ajout direct (IA désactivée)";
             candidate.prechecked = true;
@@ -272,7 +274,9 @@ const runHunter = async ({ url, category, settings, consentGiven }) => {
                 fullName: candidate.fullName,
                 headline: candidate.headline,
                 category,
-                addedAt: Date.now()
+                addedAt: Date.now(),
+                commentsCount: 0,
+                commentsSummary: []
             });
             candidate.reason = decision.reason;
             candidate.prechecked = true;
@@ -287,19 +291,23 @@ const runHunter = async ({ url, category, settings, consentGiven }) => {
         }
     }
 
-    await setTargets(targets.concat(addedTargets));
+    const maxAdd = Math.max(1, Number(settings.maxAddPerRun || addedTargets.length));
+    const cappedTargets = addedTargets.slice(0, maxAdd);
+    await setTargets(targets.concat(cappedTargets));
     await setRejected(rejected.concat(newRejected));
     chrome.tabs.remove(tabId);
 
     if (settings.autoConnect) {
-        for (const target of addedTargets) {
+        for (const target of cappedTargets) {
             await connectToProfile(target.profileUrl);
+            const delayMs = 2000 + Math.floor(Math.random() * 3000);
+            await new Promise(r => setTimeout(r, delayMs));
         }
     }
 
     return {
         success: true,
-        added: addedTargets.length,
+        added: cappedTargets.length,
         rejected: newRejected.length,
         candidates: filteredCandidates
     };
@@ -436,7 +444,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
               fullName: c.fullName,
               headline: c.headline,
               category: c.category || "Manual",
-              addedAt: Date.now()
+              addedAt: Date.now(),
+              commentsCount: 0,
+              commentsSummary: []
           }));
           await setTargets(targets.concat(additions));
           sendResponse({ success: true, added: additions.length });

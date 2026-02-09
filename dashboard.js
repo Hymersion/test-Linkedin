@@ -32,6 +32,7 @@ const initDashboard = () => {
     const hunterInclude = document.getElementById('hunter_include');
     const hunterExclude = document.getElementById('hunter_exclude');
     const hunterMax = document.getElementById('hunter_max');
+    const hunterMaxAdd = document.getElementById('hunter_max_add');
     const hunterAutoConnect = document.getElementById('hunter_auto_connect');
     const hunterConsent = document.getElementById('hunter_consent');
     const hunterStatus = document.getElementById('hunter_status');
@@ -40,6 +41,8 @@ const initDashboard = () => {
     const hunterAddBtn = document.getElementById('btn_hunter_add');
     const hunterTargets = document.getElementById('hunter_targets');
     const hunterRefreshBtn = document.getElementById('btn_hunter_refresh');
+    const hunterSort = document.getElementById('hunter_sort');
+    const hunterFilterLetter = document.getElementById('hunter_filter_letter');
     let FOUND_COMS = [];
     let RADAR_OPPS = [];
     let HUNTER_LAST_CANDIDATES = [];
@@ -80,6 +83,7 @@ const initDashboard = () => {
             if (hunterInclude) hunterInclude.value = settings.includeKeywords || "";
             if (hunterExclude) hunterExclude.value = settings.excludeKeywords || "";
             if (hunterMax) hunterMax.value = settings.maxProfilesPerRun || 30;
+            if (hunterMaxAdd) hunterMaxAdd.value = settings.maxAddPerRun || 20;
             if (hunterAutoConnect) hunterAutoConnect.checked = Boolean(settings.autoConnect);
             if (hunterConsent) hunterConsent.checked = Boolean(r[HUNTER_CONSENT_KEY]);
         });
@@ -94,6 +98,7 @@ const initDashboard = () => {
             includeKeywords: hunterInclude ? hunterInclude.value.trim() : "",
             excludeKeywords: hunterExclude ? hunterExclude.value.trim() : "",
             maxProfilesPerRun: hunterMax ? Number(hunterMax.value || 30) : 30,
+            maxAddPerRun: hunterMaxAdd ? Number(hunterMaxAdd.value || 20) : 20,
             autoConnect: hunterAutoConnect ? hunterAutoConnect.checked : false
         };
         if (chromeAvailable) {
@@ -135,37 +140,71 @@ const initDashboard = () => {
         });
     };
 
+    const applyTargetFilters = (targets) => {
+        const letter = hunterFilterLetter ? hunterFilterLetter.value.trim().toLowerCase() : "";
+        let nextTargets = targets.slice();
+        if (letter) {
+            nextTargets = nextTargets.filter(t => (t.fullName || "").toLowerCase().startsWith(letter));
+        }
+        const sortValue = hunterSort ? hunterSort.value : "date_desc";
+        if (sortValue === "date_asc") {
+            nextTargets.sort((a, b) => (a.addedAt || 0) - (b.addedAt || 0));
+        } else if (sortValue === "alpha_asc") {
+            nextTargets.sort((a, b) => (a.fullName || "").localeCompare(b.fullName || ""));
+        } else if (sortValue === "alpha_desc") {
+            nextTargets.sort((a, b) => (b.fullName || "").localeCompare(a.fullName || ""));
+        } else {
+            nextTargets.sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0));
+        }
+        return nextTargets;
+    };
+
     const renderTargets = (targets) => {
         if (!hunterTargets) return;
         hunterTargets.innerHTML = "";
-        if (!targets || targets.length === 0) {
+        const grouped = (targets || []).reduce((acc, t) => {
+            const key = t.category || "Sans catégorie";
+            if (!acc[key]) acc[key] = [];
+            acc[key].push(t);
+            return acc;
+        }, {});
+        const categoryKeys = Object.keys(grouped);
+        if (categoryKeys.length === 0) {
             hunterTargets.innerHTML = "<p class=\"muted\">Aucune cible enregistrée.</p>";
             return;
         }
-        targets.forEach((t, idx) => {
-            const row = document.createElement('div');
-            row.className = "card";
-            row.innerHTML = `
-                <div style="display:flex; justify-content:space-between; gap:8px;">
-                    <div>
-                        <b>${t.fullName || "Profil"}</b><br>
-                        <span class="muted">${t.headline || ""}</span><br>
-                        <span class="muted">Catégorie: ${t.category || "N/A"}</span><br>
-                        <a href="${t.profileUrl}" target="_blank" rel="noopener noreferrer">${t.profileUrl}</a>
+        categoryKeys.sort().forEach(category => {
+            const header = document.createElement('div');
+            header.className = "card";
+            header.innerHTML = `<b>${category}</b> <span class="muted">(${grouped[category].length})</span>`;
+            hunterTargets.appendChild(header);
+            const filtered = applyTargetFilters(grouped[category]);
+            filtered.forEach((t) => {
+                const row = document.createElement('div');
+                row.className = "card";
+                row.innerHTML = `
+                    <div style="display:flex; justify-content:space-between; gap:8px;">
+                        <div>
+                            <b>${t.fullName || "Profil"}</b><br>
+                            <span class="muted">${t.headline || ""}</span><br>
+                            <span class="muted">Ajouté: ${t.addedAt ? new Date(t.addedAt).toLocaleString() : "N/A"}</span><br>
+                            <span class="muted">Commentaires: ${t.commentsCount || 0}</span><br>
+                            <span class="muted">Récap: ${Array.isArray(t.commentsSummary) && t.commentsSummary.length ? t.commentsSummary.join(" • ") : "Aucun"}</span><br>
+                            <a href="${t.profileUrl}" target="_blank" rel="noopener noreferrer">${t.profileUrl}</a>
+                        </div>
+                        <div>
+                            <button class="btn-secondary" data-connect="${t.profileUrl}">🔗</button>
+                        </div>
                     </div>
-                    <div>
-                        <button class="btn-secondary" data-connect="${idx}">Se connecter</button>
-                    </div>
-                </div>
-            `;
-            hunterTargets.appendChild(row);
+                `;
+                hunterTargets.appendChild(row);
+            });
         });
         hunterTargets.querySelectorAll('[data-connect]').forEach(btn => {
             btn.addEventListener('click', (e) => {
-                const index = Number(e.currentTarget.dataset.connect);
-                const target = targets[index];
-                if (!target) return;
-                chrome.runtime.sendMessage({ action: "CONNECT_TARGET", profileUrl: target.profileUrl }, response => {
+                const url = e.currentTarget.dataset.connect;
+                if (!url) return;
+                chrome.runtime.sendMessage({ action: "CONNECT_TARGET", profileUrl: url }, response => {
                     if (!response || !response.success) {
                         setHunterStatus(response && response.error ? response.error : "Connexion échouée.", true);
                         return;
@@ -529,6 +568,13 @@ const initDashboard = () => {
         hunterRefreshBtn.addEventListener('click', () => {
             loadTargets();
         });
+    }
+
+    if (hunterSort) {
+        hunterSort.addEventListener('change', () => loadTargets());
+    }
+    if (hunterFilterLetter) {
+        hunterFilterLetter.addEventListener('input', () => loadTargets());
     }
 };
 

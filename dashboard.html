@@ -227,6 +227,8 @@
             <input id="hunter_exclude" placeholder="ex: stagiaire">
             <label for="hunter_max">Profils max / session</label>
             <input id="hunter_max" type="number" min="1" max="100" value="30">
+            <label for="hunter_max_add">Ajouts max / session</label>
+            <input id="hunter_max_add" type="number" min="1" max="100" value="20">
             <label>
                 <input type="checkbox" id="hunter_auto_connect">
                 Ajouter automatiquement les profils (connexion) après la chasse.
@@ -249,6 +251,15 @@
         <div class="section">
             <h4>Base de données</h4>
             <p class="muted">Liste des profils détectés par catégorie.</p>
+            <div class="row">
+                <select id="hunter_sort">
+                    <option value="date_desc">Tri: date (récent)</option>
+                    <option value="date_asc">Tri: date (ancien)</option>
+                    <option value="alpha_asc">Tri: A → Z</option>
+                    <option value="alpha_desc">Tri: Z → A</option>
+                </select>
+                <input id="hunter_filter_letter" placeholder="Filtre lettre (ex: A)">
+            </div>
             <div id="hunter_targets"></div>
             <button id="btn_hunter_refresh" class="btn-secondary">Rafraîchir</button>
         </div>
