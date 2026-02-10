@@ -358,26 +358,17 @@ const getStoredPersona = () => new Promise(resolve => {
     });
 });
 
-const scrapeMyProfileContext = async () => {
-    let tabId = null;
-    try {
-        tabId = await createInactiveTab("https://www.linkedin.com/me/");
-        await waitTabComplete(tabId, 20000);
-        await chrome.scripting.executeScript({ target: { tabId }, files: CONTENT_SCRIPT_FILES });
-        const response = await new Promise(resolve => {
-            chrome.tabs.sendMessage(tabId, { action: "SCRAPE_MY_PROFILE" }, resolve);
-        });
-        if (!response || !response.success || !response.data) return null;
-        return response.data;
-    } catch (error) {
-        console.warn("[GENERATE_HOOK_MESSAGE] scrape_my_profile_failed", { error });
-        return null;
-    } finally {
-        if (typeof tabId === "number") {
-            chrome.tabs.remove(tabId, () => void chrome.runtime.lastError);
-        }
+
+const getStoredMyProfileContext = () => new Promise(resolve => {
+    if (!storageLocalApi) {
+        resolve(null);
+        return;
     }
-};
+    storageLocalApi.get(["myProfileContext"], result => {
+        const profile = result && result.myProfileContext ? result.myProfileContext : null;
+        resolve(profile && typeof profile === "object" ? profile : null);
+    });
+});
 
 const buildHookFallbackMessage = (target, myProfile, objectives, targetInsights) => {
     const firstName = (target.fullName || "").trim().split(/\s+/)[0] || "";
@@ -996,49 +987,57 @@ if (runtimeApi && runtimeApi.onMessage) runtimeApi.onMessage.addListener((reques
   }
   if (request.action === "GENERATE_HOOK_MESSAGE") {
       (async () => {
-          const targets = await getTargets();
-          const target = targets.find(t => t.profileUrl === request.profileUrl);
-          if (!target) {
-              sendResponse({ success: false, error: "Profil introuvable." });
-              return;
-          }
-
-          const persona = await getStoredPersona();
-          const objectives = request.objectives || "";
-          const myProfile = await scrapeMyProfileContext();
-          const suggestionSignals = target.pendingComments && Array.isArray(target.pendingComments.suggestions)
-              ? target.pendingComments.suggestions
-                  .slice(0, 3)
-                  .map(s => `${s.postText || ""} | proposition: ${s.comment || ""}`)
-                  .filter(Boolean)
-                  .join(" || ")
-              : "";
-          const targetInsights = [
-              target.commentsSummary && target.commentsSummary.length ? `Commentaires observés: ${target.commentsSummary.join(" ; ")}` : "",
-              suggestionSignals ? `Posts + commentaires suggérés: ${suggestionSignals}` : "",
-              target.headline ? `Headline: ${target.headline}` : ""
-          ].filter(Boolean).join("\n");
-
-          const aiMessage = await generateHookMessageFromContext({
-              target,
-              objectives,
-              persona,
-              myProfile,
-              targetInsights
-          });
-
-          const message = aiMessage || buildHookFallbackMessage(target, myProfile, objectives, targetInsights || target.headline || "son activité");
-
-          sendResponse({
-              success: true,
-              message,
-              source: aiMessage ? "ai" : "fallback",
-              context: {
-                  usedPersona: persona,
-                  usedMyProfile: Boolean(myProfile),
-                  usedTargetInsights: Boolean(targetInsights)
+          try {
+              const targets = await getTargets();
+              const target = targets.find(t => t.profileUrl === request.profileUrl);
+              if (!target) {
+                  sendResponse({ success: false, error: "Profil introuvable." });
+                  return;
               }
-          });
+
+              const persona = await getStoredPersona();
+              const objectives = request.objectives || "";
+              const myProfile = await getStoredMyProfileContext();
+              const suggestions = target.pendingComments && Array.isArray(target.pendingComments.suggestions)
+                  ? target.pendingComments.suggestions
+                  : [];
+              const suggestionSignals = suggestions
+                  .slice(0, 3)
+                  .map(s => `${(s && s.postText) || ""} | proposition: ${(s && s.comment) || ""}`)
+                  .filter(Boolean)
+                  .join(" || ");
+              const commentsSummary = Array.isArray(target.commentsSummary) ? target.commentsSummary : [];
+              const targetInsights = [
+                  commentsSummary.length ? `Commentaires observés: ${commentsSummary.join(" ; ")}` : "",
+                  suggestionSignals ? `Posts + commentaires suggérés: ${suggestionSignals}` : "",
+                  target.headline ? `Headline: ${target.headline}` : ""
+              ].filter(Boolean).join("\n");
+
+              const aiMessage = await generateHookMessageFromContext({
+                  target,
+                  objectives,
+                  persona,
+                  myProfile,
+                  targetInsights
+              });
+
+              const message = aiMessage || buildHookFallbackMessage(target, myProfile, objectives, targetInsights || target.headline || "son activité");
+
+              sendResponse({
+                  success: true,
+                  message,
+                  source: aiMessage ? "ai" : "fallback",
+                  context: {
+                      usedPersona: persona,
+                      usedMyProfile: Boolean(myProfile),
+                      usedTargetInsights: Boolean(targetInsights)
+                  }
+              });
+          } catch (error) {
+              const errorMessage = error && error.message ? error.message : "Erreur pendant la génération du message.";
+              console.error("[GENERATE_HOOK_MESSAGE] failed", { errorMessage, error });
+              sendResponse({ success: false, error: errorMessage });
+          }
       })();
       return true;
   }
