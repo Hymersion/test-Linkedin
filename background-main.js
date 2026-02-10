@@ -339,6 +339,61 @@ const waitTabComplete = (tabId, timeoutMs) => new Promise((resolve, reject) => {
     chrome.tabs.onUpdated.addListener(onUpdated);
 });
 
+const publishSuggestionsForTarget = async ({ tabId, target, suggestions }) => {
+    const profileUrl = target && target.profileUrl ? target.profileUrl : "";
+    if (!profileUrl) {
+        return { success: false, posted: 0, attempted: 0, error: "URL profil manquante." };
+    }
+    const activityUrl = profileUrl.endsWith("/")
+        ? `${profileUrl}recent-activity/all/`
+        : `${profileUrl}/recent-activity/all/`;
+    await chrome.tabs.update(tabId, { url: activityUrl });
+    await waitTabComplete(tabId, 20000);
+    await chrome.scripting.executeScript({ target: { tabId }, files: CONTENT_SCRIPT_FILES });
+
+    let posted = 0;
+    const attempted = suggestions.length;
+    const updatedSuggestions = [];
+    for (const suggestion of suggestions) {
+        const status = suggestion && suggestion.status ? suggestion.status : "draft";
+        if (status === "published") {
+            updatedSuggestions.push(suggestion);
+            continue;
+        }
+        if (!suggestion || !suggestion.urn || !String(suggestion.comment || "").trim()) {
+            updatedSuggestions.push({ ...suggestion, status: "error", error: "Suggestion incomplète." });
+            continue;
+        }
+        const publishResult = await new Promise(resolve => {
+            chrome.tabs.sendMessage(tabId, {
+                action: "COMMENT_ON_FEED_POST_BY_URN",
+                targetURN: suggestion.urn,
+                text: suggestion.comment
+            }, resolve);
+        });
+
+        if (publishResult && publishResult.success) {
+            posted += 1;
+            updatedSuggestions.push({ ...suggestion, status: "published", publishedAt: Date.now() });
+        } else {
+            updatedSuggestions.push({ ...suggestion, status: "error", error: "Échec de publication LinkedIn." });
+        }
+        await new Promise(r => setTimeout(r, 1200));
+    }
+
+    return {
+        success: posted > 0,
+        posted,
+        attempted,
+        pendingComments: {
+            ...(target.pendingComments || {}),
+            profileUrl,
+            suggestions: updatedSuggestions,
+            lastPublishedAt: Date.now()
+        }
+    };
+};
+
 const runHunter = async ({ url, category, settings, consentGiven }) => {
     const hasConsent = await ensureConsent(consentGiven);
     if (!hasConsent) {
@@ -701,7 +756,64 @@ if (runtimeApi && runtimeApi.onMessage) runtimeApi.onMessage.addListener((reques
   }
   if (request.action === "PUBLISH_FOLLOWED_SCAN") {
       (async () => {
-          sendResponse({ success: true });
+          let tabId = null;
+          try {
+              const targets = await getTargets();
+              const category = request.category || "all";
+              const filteredTargets = category === "all"
+                  ? targets
+                  : targets.filter(t => (t.category || "").toLowerCase() === category.toLowerCase());
+              const targetsWithSuggestions = filteredTargets.filter(t =>
+                  t &&
+                  t.pendingComments &&
+                  Array.isArray(t.pendingComments.suggestions) &&
+                  t.pendingComments.suggestions.some(s => (s.status || "draft") !== "published")
+              );
+
+              if (!targetsWithSuggestions.length) {
+                  sendResponse({ success: false, error: "Aucun commentaire en attente de publication." });
+                  return;
+              }
+
+              tabId = await createInactiveTab("https://www.linkedin.com/feed/");
+              let posted = 0;
+              let attempted = 0;
+              const failedProfiles = [];
+              const byProfileUrl = new Map();
+
+              for (const target of targetsWithSuggestions) {
+                  const suggestions = target.pendingComments.suggestions || [];
+                  const publishResult = await publishSuggestionsForTarget({ tabId, target, suggestions });
+                  posted += publishResult.posted || 0;
+                  attempted += publishResult.attempted || 0;
+                  byProfileUrl.set(target.profileUrl, publishResult.pendingComments || target.pendingComments);
+                  if ((publishResult.posted || 0) === 0) {
+                      failedProfiles.push(target.fullName || target.profileUrl || "Profil");
+                  }
+              }
+
+              const updatedTargets = targets.map(target => {
+                  if (!byProfileUrl.has(target.profileUrl)) return target;
+                  return {
+                      ...target,
+                      pendingComments: byProfileUrl.get(target.profileUrl)
+                  };
+              });
+              await setTargets(updatedTargets);
+
+              const success = posted > 0;
+              const message = success
+                  ? `Publication terminée: ${posted}/${attempted} commentaires publiés.`
+                  : "Aucun commentaire n'a pu être publié.";
+              sendResponse({ success, posted, attempted, failedProfiles, message });
+          } catch (error) {
+              const errorMessage = error && error.message ? error.message : "Erreur pendant la publication des commentaires.";
+              sendResponse({ success: false, error: errorMessage });
+          } finally {
+              if (typeof tabId === "number") {
+                  chrome.tabs.remove(tabId, () => void chrome.runtime.lastError);
+              }
+          }
       })();
       return true;
   }
