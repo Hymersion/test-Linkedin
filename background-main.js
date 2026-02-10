@@ -220,20 +220,24 @@ const buildFallbackComment = (postText, objectiveText) => {
     return `Merci pour ce partage, le passage sur "${summary}" est particulièrement utile et concret.`;
 };
 
+const buildFallbackSuggestions = (target, candidatePosts, objectives, source = "fallback") => {
+    return candidatePosts.slice(0, 3).map((post, idx) => ({
+        id: `${target.profileUrl || 'profile'}-${Date.now()}-${idx}`,
+        urn: post.urn || "",
+        postText: post.text,
+        comment: buildFallbackComment(post.text, objectives),
+        source,
+        status: "draft"
+    }));
+};
+
 const generateCommentSuggestions = async (target, posts, objectives) => {
     const apiKey = await getApiKey();
     const candidatePosts = Array.isArray(posts) ? posts.filter(p => p && p.text).slice(0, 10) : [];
     if (!candidatePosts.length) return [];
 
     if (!apiKey) {
-        return candidatePosts.slice(0, 3).map((post, idx) => ({
-            id: `${target.profileUrl || 'profile'}-${Date.now()}-${idx}`,
-            urn: post.urn || "",
-            postText: post.text,
-            comment: buildFallbackComment(post.text, objectives),
-            source: "fallback",
-            status: "draft"
-        }));
+        return buildFallbackSuggestions(target, candidatePosts, objectives, "fallback_no_api_key");
     }
 
     const promptPosts = candidatePosts.map((post, index) => `${index + 1}. ${post.text}`).join("\n\n");
@@ -247,15 +251,11 @@ const generateCommentSuggestions = async (target, posts, objectives) => {
     });
 
     if (!ok) {
-        return [{
-            id: `${target.profileUrl || 'profile'}-${Date.now()}-error`,
-            urn: "",
-            postText: "",
-            comment: "",
-            reason: error || "Erreur IA",
-            source: "ai_error",
-            status: "error"
-        }];
+        console.warn("[START_FOLLOWED_SCAN] ai_generation_failed_using_fallback", {
+            profileUrl: target.profileUrl || "",
+            error: error || "Erreur IA"
+        });
+        return buildFallbackSuggestions(target, candidatePosts, objectives, "fallback_ai_error");
     }
 
     const content = data && data.choices && data.choices[0] && data.choices[0].message
@@ -263,7 +263,7 @@ const generateCommentSuggestions = async (target, posts, objectives) => {
         : "";
     const parsed = parseJsonSafe(content) || {};
     const suggestions = Array.isArray(parsed.suggestions) ? parsed.suggestions : [];
-    return suggestions
+    const aiSuggestions = suggestions
         .map((s, idx) => {
             const postIndex = Number(s.index) - 1;
             const linkedPost = candidatePosts[postIndex];
@@ -280,6 +280,13 @@ const generateCommentSuggestions = async (target, posts, objectives) => {
         })
         .filter(Boolean)
         .slice(0, 5);
+
+    if (aiSuggestions.length) return aiSuggestions;
+
+    console.warn("[START_FOLLOWED_SCAN] ai_generation_empty_using_fallback", {
+        profileUrl: target.profileUrl || ""
+    });
+    return buildFallbackSuggestions(target, candidatePosts, objectives, "fallback_ai_empty");
 };
 
 const connectToProfile = async (profileUrl) => {
