@@ -283,7 +283,33 @@ const generateCommentSuggestions = async (target, posts, objectives) => {
         .slice(0, 5);
 };
 
-const connectToProfile = async (profileUrl) => {
+const buildPersonalizedHookMessage = async (target) => {
+    const safeTarget = target || {};
+    const fallbackMessage = `Bonjour ${safeTarget.fullName || ""}, j’ai apprécié vos contenus sur ${safeTarget.headline || "LinkedIn"}. Ravi d’échanger avec vous.`;
+    const { ok, data } = await fetchOpenAI({
+        model: "gpt-4o",
+        messages: [{
+            role: "user",
+            content: `Rédige un message de connexion LinkedIn personnalisé en français, naturel et court (max 280 caractères).
+Nom: ${safeTarget.fullName || ""}
+Headline: ${safeTarget.headline || ""}
+Catégorie: ${safeTarget.category || ""}
+Contrainte: mentionner un élément concret du profil, pas d'émoji, pas de tournure générique.`
+        }],
+        temperature: 0.4
+    });
+
+    if (!ok || !data || !data.choices || !data.choices[0] || !data.choices[0].message) {
+        return { message: fallbackMessage, source: "fallback" };
+    }
+    const generated = clean(data.choices[0].message.content || "");
+    return {
+        message: generated || fallbackMessage,
+        source: generated ? "ai" : "fallback"
+    };
+};
+
+const connectToProfile = async (profileUrl, message) => {
     if (!profileUrl) return { success: false, error: "URL profil manquante." };
     let tabId = null;
     try {
@@ -291,7 +317,7 @@ const connectToProfile = async (profileUrl) => {
         await waitTabComplete(tabId, 20000);
         await chrome.scripting.executeScript({ target: { tabId }, files: CONTENT_SCRIPT_FILES });
         const result = await new Promise(resolve => {
-            chrome.tabs.sendMessage(tabId, { action: "CONNECT_PROFILE" }, (response) => {
+            chrome.tabs.sendMessage(tabId, { action: "CONNECT_PROFILE", message }, (response) => {
                 const runtimeError = chrome.runtime && chrome.runtime.lastError
                     ? chrome.runtime.lastError.message
                     : "";
@@ -642,7 +668,8 @@ const runHunter = async ({ url, category, settings, consentGiven }) => {
     const connectionErrors = [];
     if (settings.autoConnect) {
         for (const target of cappedTargets) {
-            const connectResult = await connectToProfile(target.profileUrl);
+            const hook = await buildPersonalizedHookMessage(target);
+            const connectResult = await connectToProfile(target.profileUrl, hook.message);
             if (connectResult && connectResult.success) {
                 connected += 1;
             } else {
@@ -807,7 +834,8 @@ if (runtimeApi && runtimeApi.onMessage) runtimeApi.onMessage.addListener((reques
           const connectionErrors = [];
           if (request.autoConnect) {
               for (const target of additions) {
-                  const connectResult = await connectToProfile(target.profileUrl);
+                  const hook = await buildPersonalizedHookMessage(target);
+                  const connectResult = await connectToProfile(target.profileUrl, hook.message);
                   if (connectResult && connectResult.success) {
                       connected += 1;
                   } else {
@@ -831,7 +859,7 @@ if (runtimeApi && runtimeApi.onMessage) runtimeApi.onMessage.addListener((reques
   }
   if (request.action === "CONNECT_TARGET") {
       (async () => {
-          const response = await connectToProfile(request.profileUrl);
+          const response = await connectToProfile(request.profileUrl, request.message);
           sendResponse(response);
       })();
       return true;
@@ -1077,25 +1105,8 @@ if (runtimeApi && runtimeApi.onMessage) runtimeApi.onMessage.addListener((reques
               return;
           }
 
-          const fallbackMessage = `Bonjour ${target.fullName || ""}, j’ai apprécié vos contenus sur ${target.headline || "LinkedIn"}. Ravi d’échanger avec vous.`;
-          const { ok, data } = await fetchOpenAI({
-              model: "gpt-4o",
-              messages: [{
-                  role: "user",
-                  content: `Rédige un message de connexion LinkedIn personnalisé en français, naturel et court (max 280 caractères).
-Nom: ${target.fullName || ""}
-Headline: ${target.headline || ""}
-Contrainte: pas de formule générique vide, pas d'émoji, ton pro amical.`
-              }],
-              temperature: 0.5
-          });
-
-          if (!ok || !data || !data.choices || !data.choices[0] || !data.choices[0].message) {
-              sendResponse({ success: true, message: fallbackMessage, source: "fallback" });
-              return;
-          }
-          const message = clean(data.choices[0].message.content || "") || fallbackMessage;
-          sendResponse({ success: true, message, source: "ai" });
+          const hook = await buildPersonalizedHookMessage(target);
+          sendResponse({ success: true, message: hook.message, source: hook.source });
       })();
       return true;
   }

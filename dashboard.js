@@ -326,12 +326,19 @@ const initDashboard = () => {
                     setHunterStatus("Fonctionnalité indisponible hors extension.", true);
                     return;
                 }
-                chrome.runtime.sendMessage({ action: "CONNECT_TARGET", profileUrl: url }, response => {
-                    if (!response || !response.success) {
-                        setHunterStatus(response && response.error ? response.error : "Connexion échouée.", true);
-                        return;
-                    }
-                    setHunterStatus("Demande de connexion envoyée.");
+                chrome.runtime.sendMessage({ action: "GENERATE_HOOK_MESSAGE", profileUrl: url }, hookResponse => {
+                    const hookMessage = hookResponse && hookResponse.success ? hookResponse.message : "";
+                    chrome.runtime.sendMessage({ action: "CONNECT_TARGET", profileUrl: url, message: hookMessage }, response => {
+                        if (!response || !response.success) {
+                            setHunterStatus(response && response.error ? response.error : "Connexion échouée.", true);
+                            return;
+                        }
+                        if (hookMessage) {
+                            setHunterStatus(`Connexion envoyée avec note personnalisée: ${hookMessage}`);
+                            return;
+                        }
+                        setHunterStatus("Demande de connexion envoyée.");
+                    });
                 });
             });
         });
