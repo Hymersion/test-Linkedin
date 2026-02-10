@@ -64,6 +64,7 @@ const initDashboard = () => {
     const hunterCategories = document.getElementById('hunter_categories');
     const hunterSort = document.getElementById('hunter_sort');
     const hunterFilterLetter = document.getElementById('hunter_filter_letter');
+    const hookCustomContext = document.getElementById('hook_custom_context');
     const autoTargetsCategorySelect = document.getElementById('auto_targets_category_select');
     const autoScheduleDaily = document.getElementById('auto_schedule_daily');
     const autoScheduleWeekly = document.getElementById('auto_schedule_weekly');
@@ -283,6 +284,7 @@ const initDashboard = () => {
                             <span class="muted">Ajouté: ${t.addedAt ? new Date(t.addedAt).toLocaleString() : "N/A"}</span><br>
                             <span class="muted">Commentaires: ${t.commentsCount || 0}</span><br>
                             <span class="muted">Récap: ${Array.isArray(t.commentsSummary) && t.commentsSummary.length ? t.commentsSummary.join(" • ") : "Aucun"}</span><br>
+                            <span class="muted">Accroche: ${t.hookMessage ? t.hookMessage.substring(0, 120) + (t.hookMessage.length > 120 ? "…" : "") : "Non générée"}</span><br>
                             <a href="${t.profileUrl}" target="_blank" rel="noopener noreferrer">${t.profileUrl}</a>
                         </div>
                         <div>
@@ -319,12 +321,18 @@ const initDashboard = () => {
                     setHunterStatus("Fonctionnalité indisponible hors extension.", true);
                     return;
                 }
-                chrome.runtime.sendMessage({ action: "GENERATE_HOOK_MESSAGE", profileUrl: url }, response => {
+                chrome.runtime.sendMessage({
+                    action: "GENERATE_HOOK_MESSAGE",
+                    profileUrl: url,
+                    persona: promptBox ? promptBox.value.trim() : "",
+                    customContext: hookCustomContext ? hookCustomContext.value.trim() : ""
+                }, response => {
                     if (!response || !response.success) {
                         setHunterStatus(response && response.error ? response.error : "Génération échouée.", true);
                         return;
                     }
-                    setHunterStatus(`Message d'accroche: ${response.message}`);
+                    setHunterStatus(`Message d'accroche (${response.source || "fallback"}): ${response.message}`);
+                    loadTargets();
                 });
             });
         });
@@ -375,6 +383,15 @@ const initDashboard = () => {
             renderTargets(r.targets || []);
         });
     };
+
+    if (chromeAvailable && hookCustomContext) {
+        chrome.storage.local.get(['hookCustomContext'], r => {
+            hookCustomContext.value = r.hookCustomContext || "";
+        });
+        hookCustomContext.addEventListener('blur', () => {
+            chrome.storage.local.set({ hookCustomContext: hookCustomContext.value.trim() });
+        });
+    }
 
     if (chromeAvailable && autoObjectives) {
         chrome.storage.local.get(['autoObjectives'], r => {
@@ -464,9 +481,30 @@ const initDashboard = () => {
     if (autoTargetsStart) {
         autoTargetsStart.addEventListener('click', () => {
             const category = autoTargetsCategorySelect ? autoTargetsCategorySelect.value : 'all';
+            const testLimit = autoTestLimit ? Number(autoTestLimit.value) : 2;
+            const objectives = autoObjectives ? autoObjectives.value.trim() : "";
             const days = Array.from(scheduleState.days).join(', ') || 'tous';
             const cadence = `tous les ${scheduleState.everyDays} jours à ${scheduleState.time}`;
-            setHunterStatus(`Planification: ${category} • ${cadence} • ${scheduleState.frequency} • ${days}`);
+
+            if (!chromeAvailable) {
+                setHunterStatus("Fonctionnalité indisponible hors extension.", true);
+                return;
+            }
+
+            setHunterStatus(`Démarrage scan suivi: ${category} • ${cadence} • ${scheduleState.frequency} • ${days}`);
+            chrome.runtime.sendMessage({
+                action: "START_FOLLOWED_SCAN",
+                category,
+                objectives,
+                testLimit
+            }, response => {
+                if (!response || !response.success) {
+                    setHunterStatus(response && response.error ? response.error : "Scan des profils suivis échoué.", true);
+                    return;
+                }
+                loadTargets();
+                setHunterStatus(response.message || `Scan terminé: ${response.count || 0} profils traités.`);
+            });
         });
     }
 

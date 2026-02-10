@@ -86,6 +86,72 @@ const setRejected = (rejected) => new Promise(resolve => {
     storageLocalApi.set({ [REJECTED_KEY]: rejected }, resolve);
 });
 
+const getLocalValue = (key, fallback = "") => new Promise(resolve => {
+    if (!storageLocalApi) {
+        resolve(fallback);
+        return;
+    }
+    storageLocalApi.get([key], result => resolve(result && typeof result[key] !== "undefined" ? result[key] : fallback));
+});
+
+const buildFallbackHookMessage = ({ target, persona, customContext }) => {
+    const firstName = String(target.fullName || "").trim().split(" ")[0] || "";
+    const headline = String(target.headline || "").trim();
+    const suggestion = target && target.pendingComments && Array.isArray(target.pendingComments.suggestions)
+        ? target.pendingComments.suggestions.find(s => s && s.postText)
+        : null;
+    const postHint = suggestion && suggestion.postText
+        ? String(suggestion.postText).replace(/\s+/g, " ").trim().slice(0, 120)
+        : "vos derniers contenus";
+    const personaHint = String(persona || "").replace(/\s+/g, " ").trim().slice(0, 100);
+    const customHint = String(customContext || "").replace(/\s+/g, " ").trim().slice(0, 120);
+    const intro = firstName ? `Bonjour ${firstName},` : "Bonjour,";
+    const value = headline ? ` votre angle sur ${headline}` : " vos publications";
+    const contextLine = customHint ? ` Je travaille actuellement sur ${customHint}.` : "";
+    const personaLine = personaHint ? ` Avec mon positionnement (${personaHint}),` : "";
+    return `${intro} j'ai beaucoup apprécié${value}, notamment votre point sur "${postHint}".${personaLine}${contextLine} Ravi d'échanger si cela vous parle.`.replace(/\s+/g, " ").trim();
+};
+
+const generateHookMessageForTarget = async ({ target, persona, customContext }) => {
+    const fallback = buildFallbackHookMessage({ target, persona, customContext });
+    const apiKey = await getApiKey();
+    if (!apiKey) {
+        return { message: fallback, source: "fallback" };
+    }
+
+    const relevantPosts = target && target.pendingComments && Array.isArray(target.pendingComments.suggestions)
+        ? target.pendingComments.suggestions.slice(0, 3).map(s => s && s.postText ? String(s.postText).replace(/\s+/g, " ").trim().slice(0, 220) : "").filter(Boolean)
+        : [];
+
+    const { ok, data } = await fetchOpenAI({
+        model: "gpt-4o",
+        messages: [{
+            role: "user",
+            content: `Tu rédiges un message d'accroche LinkedIn ultra personnalisé (1-2 phrases, maximum 320 caractères).
+
+Mes données (prospecteur): ${persona || "profil non renseigné"}
+Contexte business/personnalisation: ${customContext || "non renseigné"}
+Données cible: nom=${target.fullName || "N/A"}, headline=${target.headline || "N/A"}, catégorie=${target.category || "N/A"}
+Indices posts cible: ${relevantPosts.length ? relevantPosts.join(" | ") : "aucun"}
+
+Contraintes:
+- Ton humain, spécifique, non générique
+- Pas de promesse commerciale agressive
+- Mentionner un détail crédible du profil/post
+- Répondre uniquement avec le message final, sans guillemets.`
+        }],
+        temperature: 0.5
+    });
+
+    const content = ok && data && data.choices && data.choices[0] && data.choices[0].message
+        ? String(data.choices[0].message.content || "").trim()
+        : "";
+    if (!content) {
+        return { message: fallback, source: "fallback" };
+    }
+    return { message: content.slice(0, 320), source: "ai" };
+};
+
 const fetchOpenAI = async (payload) => {
     const apiKey = await getApiKey();
     if (!apiKey) {
@@ -341,21 +407,35 @@ const waitTabComplete = (tabId, timeoutMs) => new Promise((resolve, reject) => {
 
 const publishSuggestionsForTarget = async ({ tabId, target, suggestions }) => {
     const profileUrl = target && target.profileUrl ? target.profileUrl : "";
+    console.log("[PUBLISH_FOLLOWED_SCAN] publishSuggestionsForTarget:start", {
+        tabId,
+        profileUrl,
+        suggestionsCount: Array.isArray(suggestions) ? suggestions.length : 0
+    });
     if (!profileUrl) {
+        console.warn("[PUBLISH_FOLLOWED_SCAN] publishSuggestionsForTarget:missing_profile_url");
         return { success: false, posted: 0, attempted: 0, error: "URL profil manquante." };
     }
     const activityUrl = profileUrl.endsWith("/")
         ? `${profileUrl}recent-activity/all/`
         : `${profileUrl}/recent-activity/all/`;
+    console.log("[PUBLISH_FOLLOWED_SCAN] publishSuggestionsForTarget:navigate", { activityUrl });
     await chrome.tabs.update(tabId, { url: activityUrl });
     await waitTabComplete(tabId, 20000);
+    console.log("[PUBLISH_FOLLOWED_SCAN] publishSuggestionsForTarget:tab_complete", { profileUrl });
     await chrome.scripting.executeScript({ target: { tabId }, files: CONTENT_SCRIPT_FILES });
+    console.log("[PUBLISH_FOLLOWED_SCAN] publishSuggestionsForTarget:script_injected", { profileUrl });
 
     let posted = 0;
     const attempted = suggestions.length;
     const updatedSuggestions = [];
     for (const suggestion of suggestions) {
         const status = suggestion && suggestion.status ? suggestion.status : "draft";
+        console.log("[PUBLISH_FOLLOWED_SCAN] publishSuggestionsForTarget:suggestion", {
+            profileUrl,
+            urn: suggestion && suggestion.urn ? suggestion.urn : null,
+            status
+        });
         if (status === "published") {
             updatedSuggestions.push(suggestion);
             continue;
@@ -373,13 +453,21 @@ const publishSuggestionsForTarget = async ({ tabId, target, suggestions }) => {
         });
 
         if (publishResult && publishResult.success) {
+            console.log("[PUBLISH_FOLLOWED_SCAN] publishSuggestionsForTarget:publish_success", { profileUrl, urn: suggestion.urn });
             posted += 1;
             updatedSuggestions.push({ ...suggestion, status: "published", publishedAt: Date.now() });
         } else {
+            console.warn("[PUBLISH_FOLLOWED_SCAN] publishSuggestionsForTarget:publish_failed", {
+                profileUrl,
+                urn: suggestion.urn,
+                publishResult
+            });
             updatedSuggestions.push({ ...suggestion, status: "error", error: "Échec de publication LinkedIn." });
         }
         await new Promise(r => setTimeout(r, 1200));
     }
+
+    console.log("[PUBLISH_FOLLOWED_SCAN] publishSuggestionsForTarget:done", { profileUrl, posted, attempted });
 
     return {
         success: posted > 0,
@@ -693,39 +781,69 @@ if (runtimeApi && runtimeApi.onMessage) runtimeApi.onMessage.addListener((reques
       (async () => {
           let tabId = null;
           try {
+              console.log("[START_FOLLOWED_SCAN] start", {
+                  category: request.category || "all",
+                  testLimit: request.testLimit || 10
+              });
               const targets = await getTargets();
               const category = request.category || "all";
               const filtered = category === "all" ? targets : targets.filter(t => (t.category || "").toLowerCase() === category.toLowerCase());
+              console.log("[START_FOLLOWED_SCAN] targets_loaded", { totalTargets: targets.length, filtered: filtered.length });
               if (!filtered.length) {
                   sendResponse({ success: false, error: "Aucun profil suivi dans cette catégorie." });
                   return;
               }
               const limit = Math.max(1, Number(request.testLimit || 10));
               const payload = filtered.slice(0, limit);
+              console.log("[START_FOLLOWED_SCAN] payload_ready", { payloadSize: payload.length, limit });
               let totalPosts = 0;
               let totalSuggestions = 0;
               const suggestions = [];
               tabId = await createInactiveTab("https://www.linkedin.com/feed/");
+              console.log("[START_FOLLOWED_SCAN] tab_created", { tabId });
               for (const target of payload) {
-                  if (!target.profileUrl) continue;
+                  if (!target.profileUrl) {
+                      console.warn("[START_FOLLOWED_SCAN] skip_target_missing_profileUrl", { target });
+                      continue;
+                  }
+                  console.log("[START_FOLLOWED_SCAN] processing_target", {
+                      profileUrl: target.profileUrl,
+                      fullName: target.fullName || null
+                  });
                   const activityUrl = target.profileUrl.endsWith("/")
                       ? `${target.profileUrl}recent-activity/all/`
                       : `${target.profileUrl}/recent-activity/all/`;
                   await chrome.tabs.update(tabId, { url: activityUrl });
                   await waitTabComplete(tabId, 15000);
+                  console.log("[START_FOLLOWED_SCAN] tab_ready", { profileUrl: target.profileUrl });
                   await chrome.scripting.executeScript({ target: { tabId }, files: CONTENT_SCRIPT_FILES });
+                  console.log("[START_FOLLOWED_SCAN] script_injected", { profileUrl: target.profileUrl });
                   const scanResult = await new Promise(resolve => {
                       chrome.tabs.sendMessage(tabId, { action: "SCAN_PROFILE_POSTS" }, resolve);
+                  });
+                  console.log("[START_FOLLOWED_SCAN] scan_result", {
+                      profileUrl: target.profileUrl,
+                      success: !!(scanResult && scanResult.success),
+                      postsCount: Array.isArray(scanResult && scanResult.posts) ? scanResult.posts.length : 0
                   });
                   if (scanResult && scanResult.success && Array.isArray(scanResult.posts)) {
                       totalPosts += scanResult.posts.length;
                       const commentSuggestions = await generateCommentSuggestions(target, scanResult.posts, request.objectives || "");
+                      console.log("[START_FOLLOWED_SCAN] suggestions_generated", {
+                          profileUrl: target.profileUrl,
+                          suggestionsCount: commentSuggestions.length
+                      });
                       totalSuggestions += commentSuggestions.length;
                       suggestions.push({
                           profileUrl: target.profileUrl,
                           posts: scanResult.posts,
                           suggestions: commentSuggestions,
                           scannedAt: Date.now()
+                      });
+                  } else {
+                      console.warn("[START_FOLLOWED_SCAN] scan_result_invalid_or_empty", {
+                          profileUrl: target.profileUrl,
+                          scanResult
                       });
                   }
                   await new Promise(r => setTimeout(r, 1500));
@@ -742,9 +860,15 @@ if (runtimeApi && runtimeApi.onMessage) runtimeApi.onMessage.addListener((reques
                   return t;
               });
               await setTargets(updatedTargets);
+              console.log("[START_FOLLOWED_SCAN] completed", {
+                  payload: payload.length,
+                  totalPosts,
+                  totalSuggestions
+              });
               sendResponse({ success: true, count: payload.length, message: `Scan terminé: ${payload.length} profils, ${totalPosts} posts détectés, ${totalSuggestions} propositions générées.` });
           } catch (error) {
               const errorMessage = error && error.message ? error.message : "Erreur pendant le scan des profils suivis.";
+              console.error("[START_FOLLOWED_SCAN] failed", { errorMessage, error });
               sendResponse({ success: false, error: errorMessage });
           } finally {
               if (typeof tabId === "number") {
@@ -758,6 +882,7 @@ if (runtimeApi && runtimeApi.onMessage) runtimeApi.onMessage.addListener((reques
       (async () => {
           let tabId = null;
           try {
+              console.log("[PUBLISH_FOLLOWED_SCAN] start", { category: request.category || "all" });
               const targets = await getTargets();
               const category = request.category || "all";
               const filteredTargets = category === "all"
@@ -770,44 +895,76 @@ if (runtimeApi && runtimeApi.onMessage) runtimeApi.onMessage.addListener((reques
                   t.pendingComments.suggestions.some(s => (s.status || "draft") !== "published")
               );
 
+              console.log("[PUBLISH_FOLLOWED_SCAN] targets_ready", {
+                  totalTargets: targets.length,
+                  filteredTargets: filteredTargets.length,
+                  targetsWithSuggestions: targetsWithSuggestions.length
+              });
+
               if (!targetsWithSuggestions.length) {
                   sendResponse({ success: false, error: "Aucun commentaire en attente de publication." });
                   return;
               }
 
               tabId = await createInactiveTab("https://www.linkedin.com/feed/");
+              console.log("[PUBLISH_FOLLOWED_SCAN] tab_created", { tabId });
               let posted = 0;
               let attempted = 0;
               const failedProfiles = [];
-              const byProfileUrl = new Map();
+              const byProfileUrl = new Map(targets.map(target => [target.profileUrl, target.pendingComments]));
+              let updatedTargets = targets;
 
               for (const target of targetsWithSuggestions) {
                   const suggestions = target.pendingComments.suggestions || [];
-                  const publishResult = await publishSuggestionsForTarget({ tabId, target, suggestions });
-                  posted += publishResult.posted || 0;
-                  attempted += publishResult.attempted || 0;
-                  byProfileUrl.set(target.profileUrl, publishResult.pendingComments || target.pendingComments);
-                  if ((publishResult.posted || 0) === 0) {
+                  console.log("[PUBLISH_FOLLOWED_SCAN] processing_target", {
+                      profileUrl: target.profileUrl,
+                      fullName: target.fullName || null,
+                      suggestionsCount: suggestions.length
+                  });
+                  try {
+                      const publishResult = await publishSuggestionsForTarget({ tabId, target, suggestions });
+                      posted += publishResult.posted || 0;
+                      attempted += publishResult.attempted || 0;
+                      byProfileUrl.set(target.profileUrl, publishResult.pendingComments || target.pendingComments);
+                      if ((publishResult.posted || 0) === 0) {
+                          failedProfiles.push(target.fullName || target.profileUrl || "Profil");
+                      }
+                  } catch (error) {
+                      console.error("[PUBLISH_FOLLOWED_SCAN] target_failed", {
+                          profileUrl: target.profileUrl,
+                          errorMessage: error && error.message ? error.message : "Erreur inconnue",
+                          error
+                      });
                       failedProfiles.push(target.fullName || target.profileUrl || "Profil");
+                      attempted += suggestions.length;
+                      byProfileUrl.set(target.profileUrl, target.pendingComments);
                   }
+
+                  updatedTargets = updatedTargets.map(currentTarget => {
+                      if (!byProfileUrl.has(currentTarget.profileUrl)) return currentTarget;
+                      return {
+                          ...currentTarget,
+                          pendingComments: byProfileUrl.get(currentTarget.profileUrl)
+                      };
+                  });
+                  await setTargets(updatedTargets);
+                  console.log("[PUBLISH_FOLLOWED_SCAN] target_persisted", {
+                      profileUrl: target.profileUrl,
+                      posted,
+                      attempted,
+                      failedProfilesCount: failedProfiles.length
+                  });
               }
 
-              const updatedTargets = targets.map(target => {
-                  if (!byProfileUrl.has(target.profileUrl)) return target;
-                  return {
-                      ...target,
-                      pendingComments: byProfileUrl.get(target.profileUrl)
-                  };
-              });
-              await setTargets(updatedTargets);
-
               const success = posted > 0;
+              console.log("[PUBLISH_FOLLOWED_SCAN] completed", { posted, attempted, failedProfilesCount: failedProfiles.length, success });
               const message = success
                   ? `Publication terminée: ${posted}/${attempted} commentaires publiés.`
                   : "Aucun commentaire n'a pu être publié.";
               sendResponse({ success, posted, attempted, failedProfiles, message });
           } catch (error) {
               const errorMessage = error && error.message ? error.message : "Erreur pendant la publication des commentaires.";
+              console.error("[PUBLISH_FOLLOWED_SCAN] failed", { errorMessage, error });
               sendResponse({ success: false, error: errorMessage });
           } finally {
               if (typeof tabId === "number") {
@@ -825,8 +982,36 @@ if (runtimeApi && runtimeApi.onMessage) runtimeApi.onMessage.addListener((reques
               sendResponse({ success: false, error: "Profil introuvable." });
               return;
           }
-          const message = `Bonjour ${target.fullName || ""}, j’ai apprécié vos contenus sur ${target.headline || "LinkedIn"}.`;
-          sendResponse({ success: true, message });
+
+          const storedPersona = await getLocalValue("persona", "");
+          const persona = String(request.persona || storedPersona || "").trim();
+          const storedHookContext = await getLocalValue("hookCustomContext", "");
+          const customContext = String(request.customContext || storedHookContext || "").trim();
+
+          const hookResult = await generateHookMessageForTarget({ target, persona, customContext });
+          const message = hookResult.message || "";
+          if (!message) {
+              sendResponse({ success: false, error: "Impossible de générer un message d'accroche." });
+              return;
+          }
+
+          const now = Date.now();
+          const updatedTargets = targets.map(item => {
+              if (item.profileUrl !== target.profileUrl) return item;
+              return {
+                  ...item,
+                  hookMessage: message,
+                  hookGeneratedAt: now,
+                  hookMeta: {
+                      source: hookResult.source || "fallback",
+                      customContext,
+                      personaSnippet: persona.slice(0, 120)
+                  }
+              };
+          });
+          await setTargets(updatedTargets);
+
+          sendResponse({ success: true, message, source: hookResult.source || "fallback", generatedAt: now });
       })();
       return true;
   }
