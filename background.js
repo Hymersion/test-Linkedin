@@ -6,7 +6,14 @@ const QUEUE_ALARM = "ghostly-post-queue";
 const CONTENT_SCRIPT_FILES = ['selectors.js', 'content.js'];
 
 const getApiKey = () => new Promise(resolve => {
-    chrome.storage.sync.get([API_KEY_STORAGE_KEY], syncResult => {
+    const syncStore = chrome.storage && chrome.storage.sync;
+    if (!syncStore) {
+        chrome.storage.local.get([API_KEY_STORAGE_KEY], localResult => {
+            resolve((localResult[API_KEY_STORAGE_KEY] || "").trim());
+        });
+        return;
+    }
+    syncStore.get([API_KEY_STORAGE_KEY], syncResult => {
         const syncKey = (syncResult[API_KEY_STORAGE_KEY] || "").trim();
         if (syncKey) {
             resolve(syncKey);
