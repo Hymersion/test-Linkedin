@@ -317,14 +317,34 @@ const initDashboard = () => {
                 if (!url) return;
                 if (!chromeAvailable) {
                     setHunterStatus("Fonctionnalité indisponible hors extension.", true);
+                    alert("Fonctionnalité indisponible hors extension.");
                     return;
                 }
+
+                setHunterStatus("Génération du message personnalisé en cours...");
                 chrome.runtime.sendMessage({ action: "GENERATE_HOOK_MESSAGE", profileUrl: url, objectives: autoObjectives ? autoObjectives.value.trim() : "" }, response => {
-                    if (!response || !response.success) {
-                        setHunterStatus(response && response.error ? response.error : "Génération échouée.", true);
+                    const runtimeError = chrome.runtime && chrome.runtime.lastError ? chrome.runtime.lastError.message : "";
+                    if (runtimeError) {
+                        setHunterStatus(`Erreur extension: ${runtimeError}`, true);
+                        alert(`Erreur extension: ${runtimeError}`);
                         return;
                     }
-                    setHunterStatus(`Message d'accroche: ${response.message}`);
+                    if (!response || !response.success) {
+                        const errorText = response && response.error ? response.error : "Génération échouée.";
+                        setHunterStatus(errorText, true);
+                        alert(errorText);
+                        return;
+                    }
+                    const message = response.message || "";
+                    setHunterStatus(`Message d'accroche prêt (${response.source || "fallback"}).`);
+
+                    if (navigator.clipboard && navigator.clipboard.writeText) {
+                        navigator.clipboard.writeText(message).catch(() => {});
+                    }
+                    const edited = prompt("Message généré (copié dans le presse-papier si autorisé) :", message);
+                    if (edited && edited.trim()) {
+                        setHunterStatus("Message prêt à coller dans LinkedIn.");
+                    }
                 });
             });
         });
