@@ -741,8 +741,7 @@ if (runtimeApi && runtimeApi.onMessage) runtimeApi.onMessage.addListener((reques
               }
 
               tabId = await createInactiveTab("https://www.linkedin.com/feed/");
-              const updatesByProfile = new Map();
-              const publishedSummariesByProfile = new Map();
+              let updatedTargets = targets;
               let attempted = 0;
               let published = 0;
 
@@ -757,6 +756,24 @@ if (runtimeApi && runtimeApi.onMessage) runtimeApi.onMessage.addListener((reques
                   const currentSuggestions = Array.isArray(currentPending.suggestions) ? currentPending.suggestions : [];
                   const updatedSuggestions = [];
                   const profileSummary = [];
+                  const baseCommentsCount = target.commentsCount || 0;
+                  const baseCommentsSummary = Array.isArray(target.commentsSummary) ? target.commentsSummary : [];
+                  const persistProfileProgress = async () => {
+                      updatedTargets = updatedTargets.map(candidate => {
+                          if (candidate.profileUrl !== target.profileUrl) return candidate;
+                          return {
+                              ...candidate,
+                              commentsCount: baseCommentsCount + profileSummary.length,
+                              commentsSummary: baseCommentsSummary.concat(profileSummary).slice(-10),
+                              pendingComments: {
+                                  ...currentPending,
+                                  suggestions: updatedSuggestions,
+                                  lastPublishAt: Date.now()
+                              }
+                          };
+                      });
+                      await setTargets(updatedTargets);
+                  };
 
                   for (const suggestion of currentSuggestions) {
                       if (!suggestion || !suggestion.comment || !suggestion.urn || suggestion.status === "posted") {
@@ -786,31 +803,13 @@ if (runtimeApi && runtimeApi.onMessage) runtimeApi.onMessage.addListener((reques
                           publishedAt: isSuccess ? timestamp : (suggestion.publishedAt || null),
                           lastPublishError: isSuccess ? "" : "Publication impossible sur ce post."
                       });
+                      await persistProfileProgress();
                       await new Promise(r => setTimeout(r, 1200));
                   }
 
-                  updatesByProfile.set(target.profileUrl, {
-                      ...currentPending,
-                      suggestions: updatedSuggestions,
-                      lastPublishAt: Date.now()
-                  });
-                  publishedSummariesByProfile.set(target.profileUrl, profileSummary);
+                  await persistProfileProgress();
               }
 
-              const updatedTargets = targets.map(target => {
-                  if (!updatesByProfile.has(target.profileUrl)) return target;
-                  const profileSummary = publishedSummariesByProfile.get(target.profileUrl) || [];
-                  const nextCount = (target.commentsCount || 0) + profileSummary.length;
-                  const previousSummary = Array.isArray(target.commentsSummary) ? target.commentsSummary : [];
-                  return {
-                      ...target,
-                      commentsCount: nextCount,
-                      commentsSummary: previousSummary.concat(profileSummary).slice(-10),
-                      pendingComments: updatesByProfile.get(target.profileUrl)
-                  };
-              });
-
-              await setTargets(updatedTargets);
               sendResponse({
                   success: published > 0,
                   attempted,
