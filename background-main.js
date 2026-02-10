@@ -774,6 +774,11 @@ if (runtimeApi && runtimeApi.onMessage) runtimeApi.onMessage.addListener((reques
                           suggestions: commentSuggestions,
                           scannedAt: Date.now()
                       });
+                  } else {
+                      console.warn("[START_FOLLOWED_SCAN] scan_result_invalid_or_empty", {
+                          profileUrl: target.profileUrl,
+                          scanResult
+                      });
                   }
                   await new Promise(r => setTimeout(r, 1500));
               }
