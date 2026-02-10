@@ -165,6 +165,31 @@ if (!window.ghostlyLoaded) {
         return false;
     };
 
+    const findInvitationErrorText = () => {
+        const candidates = Array.from(document.querySelectorAll('[role="alert"], .artdeco-toast-item, .artdeco-inline-feedback, .artdeco-toast-item__message'));
+        for (const el of candidates) {
+            const txt = getElementLabel(el);
+            if (!txt) continue;
+            if (txt.includes('invitation n’a pas été envoyée') ||
+                txt.includes("invitation n'a pas été envoyée") ||
+                txt.includes('impossible de connecter') ||
+                txt.includes('unable to send invitation') ||
+                txt.includes('please try again') ||
+                txt.includes('merci de recommencer')) {
+                return txt;
+            }
+        }
+
+        const pageText = (document.body && document.body.innerText ? document.body.innerText : '').toLowerCase();
+        if (pageText.includes('invitation n’a pas été envoyée') ||
+            pageText.includes("invitation n'a pas été envoyée") ||
+            pageText.includes('impossible de connecter') ||
+            pageText.includes('unable to send invitation')) {
+            return 'linkedin_error_invitation_not_sent';
+        }
+        return '';
+    };
+
     const completeInviteModal = async (customMessage) => {
         await new Promise(r => setTimeout(r, 700));
         const modal = document.querySelector('[role="dialog"], .artdeco-modal');
@@ -189,7 +214,11 @@ if (!window.ghostlyLoaded) {
         const sendClickable = sendButton ? (sendButton.closest('button') || sendButton) : null;
         if (sendClickable) {
             robustClick(sendClickable);
-            await new Promise(r => setTimeout(r, 900));
+            await new Promise(r => setTimeout(r, 1200));
+            const inviteError = findInvitationErrorText();
+            if (inviteError) {
+                return { success: false, error: `LinkedIn a refusé l'invitation: ${inviteError}` };
+            }
             return { success: true };
         }
 
@@ -695,6 +724,16 @@ if (!window.ghostlyLoaded) {
                 }
 
                 const modalResult = await completeInviteModal(request.message || "");
+                if (!modalResult.success && request.message) {
+                    const retryWithoutNote = await completeInviteModal("");
+                    if (retryWithoutNote.success) {
+                        const retryConfirmed = await waitForPendingOrConnectedState(20, 900);
+                        if (retryConfirmed) {
+                            sendResponse({ success: true, fallbackWithoutNote: true });
+                            return;
+                        }
+                    }
+                }
                 if (!modalResult.success) {
                     sendResponse(modalResult);
                     return;
