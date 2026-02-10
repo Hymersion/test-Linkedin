@@ -50,6 +50,7 @@ const initDashboard = () => {
     const autoTargetsStart = document.getElementById('btn_auto_targets_start');
     const autoFollowedPreview = document.getElementById('btn_auto_followed_preview');
     const autoFollowedPublish = document.getElementById('btn_auto_followed_publish');
+    const autoObjectives = document.getElementById('auto_objectives');
     const autoScheduleTimeButtons = document.querySelectorAll('[data-time]');
     const autoScheduleDayButtons = document.querySelectorAll('[data-day]');
     const autoScheduleEvery = document.getElementById('auto_schedule_every');
@@ -262,6 +263,7 @@ const initDashboard = () => {
                         </div>
                         <div>
                             <button class="btn-secondary" data-connect="${t.profileUrl}">🔗</button>
+                            <button class="btn-secondary" data-hook="${t.profileUrl}">✉️</button>
                         </div>
                     </div>
                 `;
@@ -285,6 +287,23 @@ const initDashboard = () => {
                 });
             });
         });
+        hunterTargets.querySelectorAll('[data-hook]').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const url = e.currentTarget.dataset.hook;
+                if (!url) return;
+                if (!chromeAvailable) {
+                    setHunterStatus("Fonctionnalité indisponible hors extension.", true);
+                    return;
+                }
+                chrome.runtime.sendMessage({ action: "GENERATE_HOOK_MESSAGE", profileUrl: url }, response => {
+                    if (!response || !response.success) {
+                        setHunterStatus(response && response.error ? response.error : "Génération échouée.", true);
+                        return;
+                    }
+                    setHunterStatus(`Message d'accroche: ${response.message}`);
+                });
+            });
+        });
     };
 
     const loadTargets = () => {
@@ -293,6 +312,15 @@ const initDashboard = () => {
             renderTargets(r.targets || []);
         });
     };
+
+    if (chromeAvailable && autoObjectives) {
+        chrome.storage.local.get(['autoObjectives'], r => {
+            autoObjectives.value = r.autoObjectives || "";
+        });
+        autoObjectives.addEventListener('blur', () => {
+            chrome.storage.local.set({ autoObjectives: autoObjectives.value.trim() });
+        });
+    }
 
     const setActiveButton = (buttons, activeValue, attr) => {
         buttons.forEach(btn => {
@@ -390,6 +418,7 @@ const initDashboard = () => {
             chrome.runtime.sendMessage({
                 action: "PREVIEW_FOLLOWED_SCAN",
                 category
+                ,objectives: autoObjectives ? autoObjectives.value.trim() : ""
             }, response => {
                 if (!response || !response.success) {
                     setHunterStatus(response && response.error ? response.error : "Test de scan échoué.", true);
@@ -410,7 +439,8 @@ const initDashboard = () => {
             setHunterStatus(`Publication des commentaires sélectionnés pour: ${category}`);
             chrome.runtime.sendMessage({
                 action: "PUBLISH_FOLLOWED_SCAN",
-                category
+                category,
+                objectives: autoObjectives ? autoObjectives.value.trim() : ""
             }, response => {
                 if (!response || !response.success) {
                     setHunterStatus(response && response.error ? response.error : "Publication échouée.", true);

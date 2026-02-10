@@ -475,6 +475,19 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       })();
       return true;
   }
+  if (request.action === "GENERATE_HOOK_MESSAGE") {
+      (async () => {
+          const targets = await getTargets();
+          const target = targets.find(t => t.profileUrl === request.profileUrl);
+          if (!target) {
+              sendResponse({ success: false, error: "Profil introuvable." });
+              return;
+          }
+          const message = `Bonjour ${target.fullName || ""}, j’ai apprécié vos contenus sur ${target.headline || "LinkedIn"}.`;
+          sendResponse({ success: true, message });
+      })();
+      return true;
+  }
 });
 
 chrome.runtime.onInstalled.addListener(() => {
