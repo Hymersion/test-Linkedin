@@ -10,9 +10,7 @@ const storageLocalApi = hasChrome && chrome.storage && chrome.storage.local ? ch
 const storageSyncApi = hasChrome && chrome.storage && chrome.storage.sync ? chrome.storage.sync : null;
 const alarmsApi = hasChrome && chrome.alarms ? chrome.alarms : null;
 const actionApi = hasChrome && chrome.action ? chrome.action : null;
-const windowsApi = hasChrome && chrome.windows ? chrome.windows : null;
-
-let dashboardWindowId = null;
+const sidePanelApi = hasChrome && chrome.sidePanel ? chrome.sidePanel : null;
 
 const getApiKey = () => new Promise(resolve => {
     const syncStore = storageSyncApi;
@@ -479,89 +477,34 @@ const publishSuggestionsForTarget = async ({ tabId, target, suggestions }) => {
 };
 
 
-const openDashboardWindow = () => new Promise((resolve, reject) => {
-    if (!runtimeApi || !windowsApi) {
-        reject(new Error("API fenêtre extension indisponible."));
+const openDashboardPanel = ({ tabId, windowId }) => new Promise((resolve, reject) => {
+    if (!sidePanelApi) {
+        reject(new Error("API side panel indisponible."));
         return;
     }
 
-    const withCurrentWindow = (callback) => {
-        windowsApi.getCurrent({}, (currentWindow) => {
-            const currentWindowError = chrome.runtime && chrome.runtime.lastError
-                ? chrome.runtime.lastError.message
-                : "";
-            callback(currentWindowError ? null : currentWindow);
-        });
-    };
+    const setOptionsPayload = { path: "dashboard.html", enabled: true };
+    if (typeof tabId === "number") setOptionsPayload.tabId = tabId;
 
-    const createWindow = (currentWindow) => {
-        const screenWidth = currentWindow && currentWindow.width ? currentWindow.width : 1400;
-        const screenHeight = currentWindow && currentWindow.height ? currentWindow.height : 900;
-        const dashboardWidth = Math.max(460, Math.floor(screenWidth * 0.34));
-        const dashboardHeight = Math.max(700, screenHeight);
-        const dashboardLeft = currentWindow && typeof currentWindow.left === "number"
-            ? currentWindow.left + Math.max(0, screenWidth - dashboardWidth)
-            : 0;
-        const dashboardTop = currentWindow && typeof currentWindow.top === "number"
-            ? currentWindow.top
-            : 0;
-
-        if (currentWindow && typeof currentWindow.id === "number") {
-            const linkedinWidth = Math.max(760, screenWidth - dashboardWidth);
-            windowsApi.update(currentWindow.id, {
-                left: currentWindow.left,
-                top: currentWindow.top,
-                width: linkedinWidth,
-                height: screenHeight,
-                focused: true
-            }, () => void (chrome.runtime && chrome.runtime.lastError));
-        }
-
-        windowsApi.create({
-            url: runtimeApi.getURL("dashboard.html"),
-            type: "popup",
-            focused: false,
-            width: dashboardWidth,
-            height: dashboardHeight,
-            left: dashboardLeft,
-            top: dashboardTop
-        }, (createdWindow) => {
-            const createError = chrome.runtime && chrome.runtime.lastError
-                ? chrome.runtime.lastError.message
-                : "";
-            if (createError || !createdWindow || typeof createdWindow.id !== "number") {
-                reject(new Error(createError || "Impossible d'ouvrir le dashboard."));
-                return;
-            }
-            dashboardWindowId = createdWindow.id;
-            resolve(createdWindow);
-        });
-    };
-
-    if (typeof dashboardWindowId !== "number") {
-        withCurrentWindow(createWindow);
-        return;
-    }
-
-    windowsApi.get(dashboardWindowId, {}, (existingWindow) => {
-        const getError = chrome.runtime && chrome.runtime.lastError
+    sidePanelApi.setOptions(setOptionsPayload, () => {
+        const setOptionsError = chrome.runtime && chrome.runtime.lastError
             ? chrome.runtime.lastError.message
             : "";
-        if (getError || !existingWindow) {
-            dashboardWindowId = null;
-            withCurrentWindow(createWindow);
+        if (setOptionsError) {
+            reject(new Error(setOptionsError));
             return;
         }
-        windowsApi.update(dashboardWindowId, { focused: true }, () => {
-            const updateError = chrome.runtime && chrome.runtime.lastError
+
+        const openPayload = typeof tabId === "number" ? { tabId } : { windowId };
+        sidePanelApi.open(openPayload, () => {
+            const openError = chrome.runtime && chrome.runtime.lastError
                 ? chrome.runtime.lastError.message
                 : "";
-            if (updateError) {
-                dashboardWindowId = null;
-                withCurrentWindow(createWindow);
+            if (openError) {
+                reject(new Error(openError));
                 return;
             }
-            resolve(existingWindow);
+            resolve({ success: true });
         });
     });
 });
@@ -1073,15 +1016,12 @@ if (runtimeApi && runtimeApi.onMessage) runtimeApi.onMessage.addListener((reques
   }
 });
 
-if (windowsApi && windowsApi.onRemoved) windowsApi.onRemoved.addListener((windowId) => {
-    if (windowId === dashboardWindowId) {
-        dashboardWindowId = null;
-    }
-});
-
-if (actionApi && actionApi.onClicked) actionApi.onClicked.addListener(() => {
-    openDashboardWindow().catch(error => {
-        console.error("[DASHBOARD_WINDOW] open_failed", {
+if (actionApi && actionApi.onClicked) actionApi.onClicked.addListener((tab) => {
+    openDashboardPanel({
+        tabId: tab && typeof tab.id === "number" ? tab.id : undefined,
+        windowId: tab && typeof tab.windowId === "number" ? tab.windowId : undefined
+    }).catch(error => {
+        console.error("[DASHBOARD_PANEL] open_failed", {
             errorMessage: error && error.message ? error.message : "Erreur inconnue",
             error
         });

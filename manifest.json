@@ -8,7 +8,7 @@
     "storage",
     "alarms",
     "notifications",
-    "windows"
+    "sidePanel"
   ],
   "host_permissions": [
     "https://www.linkedin.com/*",
@@ -19,5 +19,8 @@
   },
   "action": {
     "default_title": "Ouvrir Ghostly Dashboard"
+  },
+  "side_panel": {
+    "default_path": "dashboard.html"
   }
 }

@@ -80,7 +80,6 @@ const initDashboard = () => {
     const autoScheduleEvery = document.getElementById('auto_schedule_every');
     const autoScheduleTimeSelect = document.getElementById('auto_schedule_time_select');
     const autoTabFeed = document.getElementById('auto_tab_feed');
-    const closeDashboardBtn = document.getElementById('btn_close_dashboard');
     const autoTabFollowed = document.getElementById('auto_tab_followed');
     const radarTabSettings = document.getElementById('radar_tab_settings');
     const radarTabTargets = document.getElementById('radar_tab_targets');
@@ -97,12 +96,6 @@ const initDashboard = () => {
 
     const chromeAvailable = typeof chrome !== "undefined" && chrome.storage && chrome.runtime;
 
-
-    if (closeDashboardBtn) {
-        closeDashboardBtn.addEventListener('click', () => {
-            window.close();
-        });
-    }
 
     if (chromeAvailable) {
         chrome.storage.local.get(['persona'], r => {
