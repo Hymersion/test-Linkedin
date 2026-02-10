@@ -197,6 +197,40 @@ const connectToProfile = async (profileUrl) => {
     return result || { success: false, error: "Connexion non exécutée." };
 };
 
+const createInactiveTab = (url) => new Promise((resolve, reject) => {
+    chrome.tabs.create({ url, active: false }, (tab) => {
+        const createError = chrome.runtime && chrome.runtime.lastError
+            ? chrome.runtime.lastError.message
+            : "";
+        if (createError || !tab || typeof tab.id !== "number") {
+            reject(new Error(createError || "Impossible de créer un onglet."));
+            return;
+        }
+        resolve(tab.id);
+    });
+});
+
+const waitTabComplete = (tabId, timeoutMs) => new Promise((resolve, reject) => {
+    let done = false;
+    let timeoutId = null;
+    const onUpdated = (updatedTabId, info) => {
+        if (done) return;
+        if (updatedTabId === tabId && info && info.status === "complete") {
+            done = true;
+            if (timeoutId) clearTimeout(timeoutId);
+            chrome.tabs.onUpdated.removeListener(onUpdated);
+            resolve();
+        }
+    };
+    timeoutId = setTimeout(() => {
+        if (done) return;
+        done = true;
+        chrome.tabs.onUpdated.removeListener(onUpdated);
+        reject(new Error("Délai dépassé pendant le chargement de l'onglet."));
+    }, timeoutMs || 15000);
+    chrome.tabs.onUpdated.addListener(onUpdated);
+});
+
 const runHunter = async ({ url, category, settings, consentGiven }) => {
     const hasConsent = await ensureConsent(consentGiven);
     if (!hasConsent) {
@@ -507,40 +541,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
               const payload = filtered.slice(0, limit);
               let totalPosts = 0;
               const suggestions = [];
-              tabId = await new Promise((resolve, reject) => {
-                  chrome.tabs.create({ url: "https://www.linkedin.com/feed/", active: false }, tab => {
-                      if (chrome.runtime.lastError || !tab || typeof tab.id !== "number") {
-                          const createTabError = chrome.runtime && chrome.runtime.lastError ? chrome.runtime.lastError.message : "";
-                          reject(new Error(createTabError || "Impossible de créer un onglet de scan."));
-                          return;
-                      }
-                      resolve(tab.id);
-                  });
-              });
-              const waitForTabComplete = () => new Promise((resolve, reject) => {
-                  let settled = false;
-                      if (settled) return;
-                      if (updatedTabId === tabId && info.status === "complete") {
-                          settled = true;
-                          clearTimeout(timeoutId);
-                          chrome.tabs.onUpdated.removeListener(onUpdated);
-                          resolve();
-                      }
-                  };
-                  const timeoutId = setTimeout(() => {
-                      if (settled) return;
-                      settled = true;
-                      chrome.tabs.onUpdated.removeListener(onUpdated);
-                      reject(new Error("Délai dépassé pendant le chargement du profil."));
-                  }, 15000);
-                  chrome.tabs.onUpdated.addListener(onUpdated);
-              for (const target of payload) {
-                  if (!target.profileUrl) continue;
+              tabId = await createInactiveTab("https://www.linkedin.com/feed/");
                   const activityUrl = target.profileUrl.endsWith("/")
                       ? `${target.profileUrl}recent-activity/all/`
                       : `${target.profileUrl}/recent-activity/all/`;
                   await chrome.tabs.update(tabId, { url: activityUrl });
-                  await waitForTabComplete();
+                  await waitTabComplete(tabId, 15000);
                   await chrome.scripting.executeScript({ target: { tabId }, files: CONTENT_SCRIPT_FILES });
                   const scanResult = await new Promise(resolve => {
                       chrome.tabs.sendMessage(tabId, { action: "SCAN_PROFILE_POSTS" }, resolve);
