@@ -312,6 +312,35 @@ const connectToProfile = async (profileUrl) => {
     return result || { success: false, error: "Connexion non exécutée." };
 };
 
+
+const contactProfileSmart = async ({ profileUrl, message }) => {
+    if (!profileUrl) return { success: false, error: "URL profil manquante." };
+    if (!String(message || "").trim()) return { success: false, error: "Message vide." };
+
+    const tabId = await new Promise(resolve => {
+        chrome.tabs.create({ url: profileUrl, active: true }, tab => resolve(tab && tab.id));
+    });
+    if (typeof tabId !== "number") return { success: false, error: "Impossible d'ouvrir le profil LinkedIn." };
+
+    try {
+        await waitTabComplete(tabId, 20000);
+        await chrome.scripting.executeScript({ target: { tabId }, files: CONTENT_SCRIPT_FILES });
+        const result = await new Promise(resolve => {
+            chrome.tabs.sendMessage(tabId, {
+                action: "CONTACT_PROFILE_WITH_MESSAGE",
+                text: message,
+                autoSend: true
+            }, resolve);
+        });
+        if (!result || !result.success) {
+            return { success: false, error: (result && result.error) || "Impossible d'ouvrir l'interface de message." };
+        }
+        return { success: true, mode: result.mode || "unknown", sent: Boolean(result.sent), message };
+    } catch (error) {
+        return { success: false, error: error && error.message ? error.message : "Erreur contact LinkedIn." };
+    }
+};
+
 const createInactiveTab = (url) => new Promise((resolve, reject) => {
     chrome.tabs.create({ url, active: false }, (tab) => {
         const createError = chrome.runtime && chrome.runtime.lastError
@@ -985,6 +1014,52 @@ if (runtimeApi && runtimeApi.onMessage) runtimeApi.onMessage.addListener((reques
       })();
       return true;
   }
+  if (request.action === "CONTACT_FOLLOWED_PROFILE") {
+      (async () => {
+          try {
+              const targets = await getTargets();
+              const target = targets.find(t => t.profileUrl === request.profileUrl);
+              if (!target) {
+                  sendResponse({ success: false, error: "Profil introuvable." });
+                  return;
+              }
+
+              const persona = await getStoredPersona();
+              const objectives = request.objectives || "";
+              const myProfile = await getStoredMyProfileContext();
+              const suggestions = target.pendingComments && Array.isArray(target.pendingComments.suggestions)
+                  ? target.pendingComments.suggestions
+                  : [];
+              const targetInsights = [
+                  Array.isArray(target.commentsSummary) && target.commentsSummary.length ? `Commentaires observés: ${target.commentsSummary.join(" ; ")}` : "",
+                  suggestions.slice(0, 2).map(s => `${(s && s.postText) || ""} | ${(s && s.comment) || ""}`).filter(Boolean).join(" || "),
+                  target.headline ? `Headline: ${target.headline}` : ""
+              ].filter(Boolean).join("\n");
+
+              const aiMessage = await generateHookMessageFromContext({
+                  target,
+                  objectives,
+                  persona,
+                  myProfile,
+                  targetInsights
+              });
+              const message = aiMessage || buildHookFallbackMessage(target, myProfile, objectives, targetInsights || target.headline || "son activité");
+
+              const contactResult = await contactProfileSmart({ profileUrl: target.profileUrl, message });
+              sendResponse({
+                  ...contactResult,
+                  generatedMessage: message,
+                  source: aiMessage ? "ai" : "fallback"
+              });
+          } catch (error) {
+              const errorMessage = error && error.message ? error.message : "Erreur pendant le contact profil.";
+              console.error("[CONTACT_FOLLOWED_PROFILE] failed", { errorMessage, error });
+              sendResponse({ success: false, error: errorMessage });
+          }
+      })();
+      return true;
+  }
+
   if (request.action === "GENERATE_HOOK_MESSAGE") {
       (async () => {
           try {

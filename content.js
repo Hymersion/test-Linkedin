@@ -47,6 +47,18 @@ if (!window.ghostlyLoaded) {
         return match || null;
     };
 
+
+    const findButtonByKeywords = (keywords, ctx = document) => {
+        const buttons = Array.from(ctx.querySelectorAll('button'));
+        const match = buttons.find(btn => {
+            const label = (btn.innerText || btn.getAttribute('aria-label') || "").toLowerCase();
+            return keywords.some(keyword => label.includes(keyword));
+        });
+        return match || null;
+    };
+
+    const findMessageButton = () => findButtonByKeywords(['message', 'envoyer un message', 'msg']);
+
     const waitForElement = async (selector, ctx = document, attempts = 12, delay = 400) => {
         for (let i = 0; i < attempts; i++) {
             const el = ctx.querySelector(selector);
@@ -532,6 +544,73 @@ if (!window.ghostlyLoaded) {
                 }
                 forceClick(btn);
                 sendResponse({ success: true });
+            })();
+            return true;
+        }
+
+        if (request.action === "CONTACT_PROFILE_WITH_MESSAGE") {
+            (async () => {
+                if (isLoginPage()) {
+                    sendResponse({ success: false, error: "Veuillez vous connecter à LinkedIn." });
+                    return;
+                }
+
+                const text = String(request.text || "").trim();
+                const autoSend = Boolean(request.autoSend);
+                if (!text) {
+                    sendResponse({ success: false, error: "Message vide." });
+                    return;
+                }
+
+                const messageBtn = findMessageButton();
+                if (messageBtn) {
+                    forceClick(messageBtn);
+                    const composer = await waitForElement('.msg-form__contenteditable, div[role="textbox"][contenteditable="true"], .msg-form__msg-content-container div[contenteditable="true"]', document, 15, 300);
+                    if (!composer) {
+                        sendResponse({ success: false, error: "Interface message introuvable après ouverture." });
+                        return;
+                    }
+                    await securePaste(composer, text);
+                    if (autoSend) {
+                        const sendBtn = document.querySelector('.msg-form__send-button') || findButtonByKeywords(['envoyer', 'send']);
+                        if (sendBtn) forceClick(sendBtn);
+                    }
+                    sendResponse({ success: true, mode: 'message', sent: autoSend, messageReady: true });
+                    return;
+                }
+
+                const connectBtn = findConnectButton();
+                if (!connectBtn) {
+                    sendResponse({ success: false, error: "Ni bouton Message ni bouton Se connecter trouvés." });
+                    return;
+                }
+
+                forceClick(connectBtn);
+                const modal = await waitForElement('.artdeco-modal, .send-invite', document, 15, 300);
+                if (!modal) {
+                    sendResponse({ success: false, error: "Fenêtre d'invitation introuvable." });
+                    return;
+                }
+
+                const addNoteBtn = findButtonByKeywords(['ajouter une note', 'add a note'], modal) || findButtonByKeywords(['ajouter une note', 'add a note']);
+                if (addNoteBtn) {
+                    forceClick(addNoteBtn);
+                    await new Promise(r => setTimeout(r, 400));
+                }
+
+                const noteInput = modal.querySelector('textarea[name="message"], textarea#custom-message, textarea') || document.querySelector('textarea[name="message"], textarea#custom-message, textarea');
+                if (noteInput) {
+                    noteInput.focus();
+                    noteInput.value = text;
+                    noteInput.dispatchEvent(new Event('input', { bubbles: true }));
+                }
+
+                if (autoSend) {
+                    const sendInviteBtn = findButtonByKeywords(['envoyer', 'send', 'invitation'], modal) || findButtonByKeywords(['envoyer', 'send', 'invitation']);
+                    if (sendInviteBtn) forceClick(sendInviteBtn);
+                }
+
+                sendResponse({ success: true, mode: 'connect', sent: autoSend, messageReady: true });
             })();
             return true;
         }

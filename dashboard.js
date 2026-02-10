@@ -321,8 +321,8 @@ const initDashboard = () => {
                     return;
                 }
 
-                setHunterStatus("Génération du message personnalisé en cours...");
-                chrome.runtime.sendMessage({ action: "GENERATE_HOOK_MESSAGE", profileUrl: url, objectives: autoObjectives ? autoObjectives.value.trim() : "" }, response => {
+                setHunterStatus("Ouverture LinkedIn et préparation du contact...");
+                chrome.runtime.sendMessage({ action: "CONTACT_FOLLOWED_PROFILE", profileUrl: url, objectives: autoObjectives ? autoObjectives.value.trim() : "" }, response => {
                     const runtimeError = chrome.runtime && chrome.runtime.lastError ? chrome.runtime.lastError.message : "";
                     if (runtimeError) {
                         setHunterStatus(`Erreur extension: ${runtimeError}`, true);
@@ -330,20 +330,17 @@ const initDashboard = () => {
                         return;
                     }
                     if (!response || !response.success) {
-                        const errorText = response && response.error ? response.error : "Génération échouée.";
+                        const errorText = response && response.error ? response.error : "Contact échoué.";
                         setHunterStatus(errorText, true);
                         alert(errorText);
                         return;
                     }
-                    const message = response.message || "";
-                    setHunterStatus(`Message d'accroche prêt (${response.source || "fallback"}).`);
 
-                    if (navigator.clipboard && navigator.clipboard.writeText) {
-                        navigator.clipboard.writeText(message).catch(() => {});
-                    }
-                    const edited = prompt("Message généré (copié dans le presse-papier si autorisé) :", message);
-                    if (edited && edited.trim()) {
-                        setHunterStatus("Message prêt à coller dans LinkedIn.");
+                    const modeText = response.mode === "message" ? "message direct" : (response.mode === "connect" ? "invitation avec note" : "contact");
+                    setHunterStatus(`Interface LinkedIn ouverte (${modeText}) et action exécutée.`);
+
+                    if (response.generatedMessage && navigator.clipboard && navigator.clipboard.writeText) {
+                        navigator.clipboard.writeText(response.generatedMessage).catch(() => {});
                     }
                 });
             });
