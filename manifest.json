@@ -18,7 +18,8 @@
     "service_worker": "background.js"
   },
   "action": {
-    "default_title": "Ouvrir Ghostly Dashboard"
+    "default_title": "Ouvrir Ghostly Dashboard",
+    "default_popup": "dashboard.html"
   },
   "side_panel": {
     "default_path": "dashboard.html"

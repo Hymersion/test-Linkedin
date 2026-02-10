@@ -9,7 +9,6 @@ const runtimeApi = hasChrome && chrome.runtime ? chrome.runtime : null;
 const storageLocalApi = hasChrome && chrome.storage && chrome.storage.local ? chrome.storage.local : null;
 const storageSyncApi = hasChrome && chrome.storage && chrome.storage.sync ? chrome.storage.sync : null;
 const alarmsApi = hasChrome && chrome.alarms ? chrome.alarms : null;
-const actionApi = hasChrome && chrome.action ? chrome.action : null;
 const sidePanelApi = hasChrome && chrome.sidePanel ? chrome.sidePanel : null;
 
 const getApiKey = () => new Promise(resolve => {
@@ -1001,6 +1000,32 @@ if (runtimeApi && runtimeApi.onMessage) runtimeApi.onMessage.addListener((reques
       })();
       return true;
   }
+  if (request.action === "LOCK_DASHBOARD_PANEL") {
+      (async () => {
+          try {
+              let tabId = request && typeof request.tabId === "number" ? request.tabId : null;
+              let windowId = request && typeof request.windowId === "number" ? request.windowId : null;
+
+              if (tabId === null) {
+                  const activeTab = await new Promise(resolve => {
+                      chrome.tabs.query({ active: true, lastFocusedWindow: true }, tabs => {
+                          resolve(Array.isArray(tabs) && tabs.length ? tabs[0] : null);
+                      });
+                  });
+                  if (activeTab && typeof activeTab.id === "number") tabId = activeTab.id;
+                  if (activeTab && typeof activeTab.windowId === "number") windowId = activeTab.windowId;
+              }
+
+              await openDashboardPanel({ tabId, windowId });
+              sendResponse({ success: true });
+          } catch (error) {
+              const errorMessage = error && error.message ? error.message : "Impossible de verrouiller le panneau.";
+              console.error("[DASHBOARD_PANEL] lock_failed", { errorMessage, error });
+              sendResponse({ success: false, error: errorMessage });
+          }
+      })();
+      return true;
+  }
   if (request.action === "GENERATE_HOOK_MESSAGE") {
       (async () => {
           const targets = await getTargets();
@@ -1014,18 +1039,6 @@ if (runtimeApi && runtimeApi.onMessage) runtimeApi.onMessage.addListener((reques
       })();
       return true;
   }
-});
-
-if (actionApi && actionApi.onClicked) actionApi.onClicked.addListener((tab) => {
-    openDashboardPanel({
-        tabId: tab && typeof tab.id === "number" ? tab.id : undefined,
-        windowId: tab && typeof tab.windowId === "number" ? tab.windowId : undefined
-    }).catch(error => {
-        console.error("[DASHBOARD_PANEL] open_failed", {
-            errorMessage: error && error.message ? error.message : "Erreur inconnue",
-            error
-        });
-    });
 });
 
 if (runtimeApi && runtimeApi.onInstalled) runtimeApi.onInstalled.addListener(() => {

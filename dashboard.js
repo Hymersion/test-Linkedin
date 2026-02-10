@@ -80,6 +80,7 @@ const initDashboard = () => {
     const autoScheduleEvery = document.getElementById('auto_schedule_every');
     const autoScheduleTimeSelect = document.getElementById('auto_schedule_time_select');
     const autoTabFeed = document.getElementById('auto_tab_feed');
+    const lockPanelBtn = document.getElementById('btn_lock_panel');
     const autoTabFollowed = document.getElementById('auto_tab_followed');
     const radarTabSettings = document.getElementById('radar_tab_settings');
     const radarTabTargets = document.getElementById('radar_tab_targets');
@@ -96,6 +97,28 @@ const initDashboard = () => {
 
     const chromeAvailable = typeof chrome !== "undefined" && chrome.storage && chrome.runtime;
 
+    if (lockPanelBtn) {
+        lockPanelBtn.addEventListener('click', () => {
+            if (!chromeAvailable) {
+                alert("Fonctionnalité indisponible hors extension.");
+                return;
+            }
+            chrome.tabs.query({ active: true, lastFocusedWindow: true }, (tabs) => {
+                const activeTab = Array.isArray(tabs) && tabs.length ? tabs[0] : null;
+                chrome.runtime.sendMessage({
+                    action: "LOCK_DASHBOARD_PANEL",
+                    tabId: activeTab && typeof activeTab.id === "number" ? activeTab.id : undefined,
+                    windowId: activeTab && typeof activeTab.windowId === "number" ? activeTab.windowId : undefined
+                }, (response) => {
+                    if (response && response.success) {
+                        window.close();
+                        return;
+                    }
+                    alert((response && response.error) || "Impossible de verrouiller l'affichage.");
+                });
+            });
+        });
+    }
 
     if (chromeAvailable) {
         chrome.storage.local.get(['persona'], r => {
