@@ -1,4 +1,24 @@
+let dashboardInitialized = false;
+
+const bindFallbackNavigation = () => {
+    const map = { 'nav_id': 'tab_id', 'nav_com': 'tab_com', 'nav_radar': 'tab_radar', 'nav_post': 'tab_post', 'nav_reseau': 'tab_reseau', 'nav_queue': 'tab_queue' };
+    Object.keys(map).forEach(navId => {
+        const el = document.getElementById(navId);
+        if (!el || el.dataset.fallbackBound === "1") return;
+        el.dataset.fallbackBound = "1";
+        el.addEventListener('click', () => {
+            document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            el.classList.add('active');
+            const targetTab = document.getElementById(map[navId]);
+            if (targetTab) targetTab.classList.add('active');
+        });
+    });
+};
+
 const initDashboard = () => {
+    if (dashboardInitialized) return;
+    dashboardInitialized = true;
 
     const map = { 'nav_id': 'tab_id', 'nav_com': 'tab_com', 'nav_radar': 'tab_radar', 'nav_post': 'tab_post', 'nav_reseau': 'tab_reseau', 'nav_queue': 'tab_queue' };
     const API_KEY_STORAGE_KEY = "openaiApiKey";
@@ -857,8 +877,17 @@ const initDashboard = () => {
     }
 };
 
+const safeInitDashboard = () => {
+    try {
+        initDashboard();
+    } catch (error) {
+        console.error("Dashboard init failed:", error);
+        bindFallbackNavigation();
+    }
+};
+
 if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initDashboard);
+    document.addEventListener('DOMContentLoaded', safeInitDashboard);
 } else {
-    initDashboard();
+    safeInitDashboard();
 }
