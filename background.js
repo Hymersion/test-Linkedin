@@ -517,16 +517,21 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                   });
               });
               const waitForTabComplete = () => new Promise((resolve, reject) => {
-                  const timeoutId = setTimeout(() => {
-                      reject(new Error("Délai dépassé pendant le chargement du profil."));
-                  }, 15000);
-                  const onUpdated = (updatedTabId, info) => {
+                  let settled = false;
+                      if (settled) return;
                       if (updatedTabId === tabId && info.status === "complete") {
+                          settled = true;
                           clearTimeout(timeoutId);
                           chrome.tabs.onUpdated.removeListener(onUpdated);
                           resolve();
                       }
                   };
+                  const timeoutId = setTimeout(() => {
+                      if (settled) return;
+                      settled = true;
+                      chrome.tabs.onUpdated.removeListener(onUpdated);
+                      reject(new Error("Délai dépassé pendant le chargement du profil."));
+                  }, 15000);
                   chrome.tabs.onUpdated.addListener(onUpdated);
               for (const target of payload) {
                   if (!target.profileUrl) continue;
