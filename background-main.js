@@ -743,7 +743,7 @@ if (runtimeApi && runtimeApi.onMessage) runtimeApi.onMessage.addListener((reques
               });
               await setTargets(updatedTargets);
               sendResponse({ success: true, count: payload.length, message: `Scan terminé: ${payload.length} profils, ${totalPosts} posts détectés, ${totalSuggestions} propositions générées.` });
-          } catch {
+          } catch (error) {
               const errorMessage = error && error.message ? error.message : "Erreur pendant le scan des profils suivis.";
               sendResponse({ success: false, error: errorMessage });
           } finally {
