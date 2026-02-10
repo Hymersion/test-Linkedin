@@ -478,9 +478,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
               sendResponse({ success: false, error: "Aucun profil suivi dans cette catégorie." });
               return;
           }
-          const firstTarget = filtered[0];
+          const payload = filtered.slice(0, 10).map(t => ({
+              profileUrl: t.profileUrl,
+              fullName: t.fullName,
+              headline: t.headline,
+              lastScanAt: t.lastScanAt || null
+          }));
           const tabId = await new Promise(resolve => {
-              chrome.tabs.create({ url: firstTarget.profileUrl, active: false }, tab => resolve(tab.id));
+              chrome.tabs.create({ url: payload[0].profileUrl, active: false }, tab => resolve(tab.id));
           });
           const waitForTabComplete = () => new Promise(resolve => {
               const onUpdated = (updatedTabId, info) => {
@@ -493,8 +498,23 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           });
           await waitForTabComplete();
           await chrome.scripting.executeScript({ target: { tabId }, files: CONTENT_SCRIPT_FILES });
+          const scanResult = await new Promise(resolve => {
+              chrome.tabs.sendMessage(tabId, { action: "SCAN_FOLLOWED_PROFILES", profiles: payload }, resolve);
+          });
           chrome.tabs.remove(tabId);
-          sendResponse({ success: true, count: filtered.length, message: `Scan lancé: ${filtered.length} profils suivis.` });
+          if (!scanResult || !scanResult.success) {
+              sendResponse({ success: false, error: scanResult && scanResult.error ? scanResult.error : "Scan échoué." });
+              return;
+          }
+          const now = Date.now();
+          const updatedTargets = targets.map(t => {
+              if (payload.find(p => p.profileUrl === t.profileUrl)) {
+                  return { ...t, lastScanAt: now };
+              }
+              return t;
+          });
+          await setTargets(updatedTargets);
+          sendResponse({ success: true, count: payload.length, message: `Scan lancé: ${payload.length} profils suivis.` });
       })();
       return true;
   }

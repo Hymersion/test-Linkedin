@@ -95,6 +95,20 @@ if (!window.ghostlyLoaded) {
         return { profileUrl, fullName, headline };
     };
 
+    const collectRecentPosts = (limit = 10) => {
+        const posts = [];
+        const candidates = document.querySelectorAll('div[data-urn]');
+        candidates.forEach((el) => {
+            if (posts.length >= limit) return;
+            const urn = el.getAttribute('data-urn');
+            if (!urn || (!urn.includes('activity') && !urn.includes('ugcPost'))) return;
+            const txt = el.innerText || "";
+            if (txt.length < 40) return;
+            posts.push({ urn, text: txt.substring(0, 400) });
+        });
+        return posts;
+    };
+
     chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         
         // --- 1. SCAN FEED (RADAR ATOMIQUE) ---
@@ -403,6 +417,32 @@ if (!window.ghostlyLoaded) {
                 }
                 forceClick(btn);
                 sendResponse({ success: true });
+            })();
+            return true;
+        }
+        if (request.action === "SCAN_FOLLOWED_PROFILES") {
+            (async () => {
+                if (isLoginPage()) {
+                    sendResponse({ success: false, error: "Veuillez vous connecter à LinkedIn." });
+                    return;
+                }
+                const profiles = request.profiles || [];
+                if (!profiles.length) {
+                    sendResponse({ success: false, error: "Aucun profil à scanner." });
+                    return;
+                }
+                const results = [];
+                for (const profile of profiles) {
+                    if (window.location.href !== profile.profileUrl) {
+                        await new Promise(resolve => {
+                            window.location.href = profile.profileUrl;
+                            setTimeout(resolve, 4000);
+                        });
+                    }
+                    const posts = collectRecentPosts(10);
+                    results.push({ profileUrl: profile.profileUrl, posts });
+                }
+                sendResponse({ success: true, results });
             })();
             return true;
         }
