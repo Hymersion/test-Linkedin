@@ -329,13 +329,13 @@ const contactProfileSmart = async ({ profileUrl, message }) => {
             chrome.tabs.sendMessage(tabId, {
                 action: "CONTACT_PROFILE_WITH_MESSAGE",
                 text: message,
-                autoSend: true
+                autoSend: false
             }, resolve);
         });
         if (!result || !result.success) {
             return { success: false, error: (result && result.error) || "Impossible d'ouvrir l'interface de message." };
         }
-        return { success: true, mode: result.mode || "unknown", sent: Boolean(result.sent), message };
+        return { success: true, mode: result.mode || "unknown", sent: false, message };
     } catch (error) {
         return { success: false, error: error && error.message ? error.message : "Erreur contact LinkedIn." };
     }

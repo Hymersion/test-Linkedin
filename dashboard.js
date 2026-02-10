@@ -286,8 +286,8 @@ const initDashboard = () => {
                             <a href="${t.profileUrl}" target="_blank" rel="noopener noreferrer">${t.profileUrl}</a>
                         </div>
                         <div>
-                            <button class="btn-secondary" data-connect="${t.profileUrl}">🔗</button>
-                            <button class="btn-secondary" data-hook="${t.profileUrl}">✉️</button>
+                            <button class="btn-secondary" data-connect="${t.profileUrl}" title="Envoyer une demande de connexion">🤝</button>
+                            <button class="btn-secondary" data-hook="${t.profileUrl}" title="Générer un message d'accroche personnalisé">✉️</button>
                         </div>
                     </div>
                 `;
@@ -321,7 +321,7 @@ const initDashboard = () => {
                     return;
                 }
 
-                setHunterStatus("Ouverture LinkedIn et préparation du contact...");
+                setHunterStatus("Ouverture LinkedIn et préparation du brouillon de message...");
                 chrome.runtime.sendMessage({ action: "CONTACT_FOLLOWED_PROFILE", profileUrl: url, objectives: autoObjectives ? autoObjectives.value.trim() : "" }, response => {
                     const runtimeError = chrome.runtime && chrome.runtime.lastError ? chrome.runtime.lastError.message : "";
                     if (runtimeError) {
@@ -337,7 +337,7 @@ const initDashboard = () => {
                     }
 
                     const modeText = response.mode === "message" ? "message direct" : (response.mode === "connect" ? "invitation avec note" : "contact");
-                    setHunterStatus(`Interface LinkedIn ouverte (${modeText}) et action exécutée.`);
+                    setHunterStatus(`Interface LinkedIn ouverte (${modeText}). Message pré-rempli (envoi manuel).`);
 
                     if (response.generatedMessage && navigator.clipboard && navigator.clipboard.writeText) {
                         navigator.clipboard.writeText(response.generatedMessage).catch(() => {});
