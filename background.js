@@ -460,6 +460,21 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       })();
       return true;
   }
+  if (request.action === "PREVIEW_FOLLOWED_SCAN") {
+      (async () => {
+          const targets = await getTargets();
+          const category = request.category || "all";
+          const filtered = category === "all" ? targets : targets.filter(t => (t.category || "").toLowerCase() === category.toLowerCase());
+          sendResponse({ success: true, count: filtered.length });
+      })();
+      return true;
+  }
+  if (request.action === "PUBLISH_FOLLOWED_SCAN") {
+      (async () => {
+          sendResponse({ success: true });
+      })();
+      return true;
+  }
 });
 
 chrome.runtime.onInstalled.addListener(() => {

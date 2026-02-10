@@ -382,14 +382,42 @@ const initDashboard = () => {
     if (autoFollowedPreview) {
         autoFollowedPreview.addEventListener('click', () => {
             const category = autoTargetsCategorySelect ? autoTargetsCategorySelect.value : 'all';
+            if (!chromeAvailable) {
+                setHunterStatus("Fonctionnalité indisponible hors extension.", true);
+                return;
+            }
             setHunterStatus(`Test de scan en cours pour: ${category}`);
+            chrome.runtime.sendMessage({
+                action: "PREVIEW_FOLLOWED_SCAN",
+                category
+            }, response => {
+                if (!response || !response.success) {
+                    setHunterStatus(response && response.error ? response.error : "Test de scan échoué.", true);
+                    return;
+                }
+                setHunterStatus(`Test terminé: ${response.count || 0} profils détectés.`);
+            });
         });
     }
 
     if (autoFollowedPublish) {
         autoFollowedPublish.addEventListener('click', () => {
             const category = autoTargetsCategorySelect ? autoTargetsCategorySelect.value : 'all';
+            if (!chromeAvailable) {
+                setHunterStatus("Fonctionnalité indisponible hors extension.", true);
+                return;
+            }
             setHunterStatus(`Publication des commentaires sélectionnés pour: ${category}`);
+            chrome.runtime.sendMessage({
+                action: "PUBLISH_FOLLOWED_SCAN",
+                category
+            }, response => {
+                if (!response || !response.success) {
+                    setHunterStatus(response && response.error ? response.error : "Publication échouée.", true);
+                    return;
+                }
+                setHunterStatus("Publication terminée.");
+            });
         });
     }
 
