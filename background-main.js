@@ -313,7 +313,13 @@ const connectToProfile = async (profileUrl, message) => {
     if (!profileUrl) return { success: false, error: "URL profil manquante." };
     let tabId = null;
     try {
-        tabId = await createInactiveTab(profileUrl);
+        tabId = await new Promise((resolve, reject) => {
+            chrome.tabs.create({ url: profileUrl, active: true }, (tab) => {
+                const createError = chrome.runtime && chrome.runtime.lastError ? chrome.runtime.lastError.message : "";
+                if (createError || !tab || typeof tab.id !== "number") { reject(new Error(createError || "Impossible de créer un onglet.")); return; }
+                resolve(tab.id);
+            });
+        });
         await waitTabComplete(tabId, 20000);
         await chrome.scripting.executeScript({ target: { tabId }, files: CONTENT_SCRIPT_FILES });
         const result = await new Promise(resolve => {

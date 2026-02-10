@@ -57,11 +57,35 @@ if (!window.ghostlyLoaded) {
             label.includes('suivi') ||
             label.includes('following') ||
             label.includes('relation') ||
-            label.includes('connected');
-    };
 
-    const findConnectButton = (ctx = document) => {
+        const ctaSelectors = [
+            '.pv-top-card-v2-ctas button',
+            '.pv-top-card--list button',
+            'button[aria-label*="Inviter"]',
+            'button[aria-label*="Connect"]',
+            'button[data-control-name*="connect"]'
+        ];
+        for (const selector of ctaSelectors) {
+            const candidates = Array.from(profileMain.querySelectorAll(selector));
+            const match = candidates.find(btn => {
+                const label = getElementLabel(btn);
+                if (!isConnectLabel(label) && !String(btn.getAttribute('data-control-name') || '').toLowerCase().includes('connect')) return false;
+                if (label.includes('déconnecter') || label.includes('disconnect')) return false;
+                if (isPendingOrConnectedLabel(label)) return false;
+                return true;
+            });
+            if (match) return match;
+        }
+
+        return buttons.find(btn => {
+        }) || null;
         const profileMain = ctx.querySelector('main') || ctx;
+        const buttons = Array.from(profileMain.querySelectorAll('button'));
+            const aria = String(btn.getAttribute('aria-label') || '').toLowerCase();
+            const dataControl = String(btn.getAttribute('data-control-name') || '').toLowerCase();
+            return label.includes('plus') || label.includes('more') || label.includes('autres actions') ||
+                aria.includes('more actions') || aria.includes('autres actions') ||
+                dataControl.includes('overflow') || dataControl.includes('more');
         const buttons = Array.from(profileMain.querySelectorAll('button'));
         const match = buttons.find(btn => {
             const label = getElementLabel(btn);
@@ -631,13 +655,18 @@ if (!window.ghostlyLoaded) {
                 }
 
                 let clicked = false;
-                const directConnectBtn = findConnectButton();
-                if (directConnectBtn) {
-                    clicked = forceClick(directConnectBtn);
-                }
-
-                if (!clicked) {
-                    clicked = await clickConnectFromOverflow();
+                for (let attempt = 0; attempt < 2 && !clicked; attempt++) {
+                    const directConnectBtn = findConnectButton();
+                    if (directConnectBtn) {
+                        clicked = robustClick(directConnectBtn);
+                    }
+                    if (!clicked) {
+                        clicked = await clickConnectFromOverflow();
+                    }
+                    if (!clicked && attempt === 0) {
+                        window.scrollBy(0, -300);
+                        await new Promise(r => setTimeout(r, 800));
+                    }
                 }
 
                 if (!clicked) {
