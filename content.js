@@ -36,6 +36,15 @@ if (!window.ghostlyLoaded) {
                container.querySelector('button[aria-label*="Post"]');
     };
 
+    const findConnectButton = () => {
+        const buttons = Array.from(document.querySelectorAll('button'));
+        const match = buttons.find(btn => {
+            const label = (btn.innerText || btn.getAttribute('aria-label') || "").toLowerCase();
+            return label.includes('se connecter') || label.includes('connect');
+        });
+        return match || null;
+    };
+
     const waitForElement = async (selector, ctx = document, attempts = 12, delay = 400) => {
         for (let i = 0; i < attempts; i++) {
             const el = ctx.querySelector(selector);
@@ -62,6 +71,55 @@ if (!window.ghostlyLoaded) {
     };
 
     const normalize = (str) => str.replace(/\s+/g, ' ').trim().toLowerCase();
+    const selectors = window.GHOSTLY_SELECTORS || { search: { main: "main", profileLink: "a[href*=\"/in/\"]", profileCard: "li, div" }, auth: { loginForm: "form[action*=\"login\"], input[name=\"session_key\"], input#username" } };
+    const isLoginPage = () => Boolean(document.querySelector(selectors.auth.loginForm)) || window.location.href.includes("linkedin.com/login");
+
+    const getCandidateCard = (linkEl) => {
+        if (!linkEl) return null;
+        let card = linkEl.closest(selectors.search.profileCard);
+        if (!card) card = linkEl.parentElement;
+        return card || linkEl;
+    };
+
+    const extractCandidate = (linkEl) => {
+        if (!linkEl) return null;
+        const profileUrl = linkEl.href ? linkEl.href.split("?")[0] : "";
+        if (!profileUrl.includes("/in/")) return null;
+        const card = getCandidateCard(linkEl);
+        const fullName = linkEl.innerText.trim() || linkEl.getAttribute("aria-label") || "Profil LinkedIn";
+        let headline = "";
+        if (card) {
+            const ariaText = card.querySelector('[aria-hidden="true"]');
+            if (ariaText) headline = ariaText.innerText.trim();
+        }
+        return { profileUrl, fullName, headline };
+    };
+
+    const collectRecentPosts = (limit = 10) => {
+        const posts = [];
+        const candidates = document.querySelectorAll('div[data-urn]');
+        candidates.forEach((el) => {
+            if (posts.length >= limit) return;
+            const urn = el.getAttribute('data-urn');
+            if (!urn || (!urn.includes('activity') && !urn.includes('ugcPost'))) return;
+            const txt = el.innerText || "";
+            if (txt.length < 40) return;
+            posts.push({ urn, text: txt.substring(0, 400) });
+        });
+        return posts;
+    };
+
+    const scrollAndCollect = async (limit = 10) => {
+        let posts = collectRecentPosts(limit);
+        let attempts = 0;
+        while (posts.length < limit && attempts < 4) {
+            window.scrollBy(0, 800);
+            await new Promise(r => setTimeout(r, 1200));
+            posts = collectRecentPosts(limit);
+            attempts += 1;
+        }
+        return posts;
+    };
 
     chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         
@@ -333,6 +391,81 @@ if (!window.ghostlyLoaded) {
                 } catch (e) {
                     sendResponse({ success: false, error: "Profile scrape failed." });
                 }
+            })();
+            return true;
+        }
+        if (request.action === "SCRAPE_SEARCH_RESULTS") {
+            (async () => {
+                if (isLoginPage()) {
+                    sendResponse({ success: false, error: "Veuillez vous connecter à LinkedIn." });
+                    return;
+                }
+                const maxProfiles = Number(request.maxProfilesPerRun || 30);
+                const main = document.querySelector(selectors.search.main) || document;
+                const links = Array.from(main.querySelectorAll(selectors.search.profileLink));
+                const candidates = [];
+                const seen = new Set();
+                for (const linkEl of links) {
+                    const candidate = extractCandidate(linkEl);
+                    if (!candidate || seen.has(candidate.profileUrl)) continue;
+                    seen.add(candidate.profileUrl);
+                    candidates.push(candidate);
+                    if (candidates.length >= maxProfiles) break;
+                }
+                sendResponse({ success: true, candidates });
+            })();
+            return true;
+        }
+        if (request.action === "CONNECT_PROFILE") {
+            (async () => {
+                if (isLoginPage()) {
+                    sendResponse({ success: false, error: "Veuillez vous connecter à LinkedIn." });
+                    return;
+                }
+                const btn = findConnectButton();
+                if (!btn) {
+                    sendResponse({ success: false, error: "Bouton de connexion introuvable." });
+                    return;
+                }
+                forceClick(btn);
+                sendResponse({ success: true });
+            })();
+            return true;
+        }
+        if (request.action === "SCAN_FOLLOWED_PROFILES") {
+            (async () => {
+                if (isLoginPage()) {
+                    sendResponse({ success: false, error: "Veuillez vous connecter à LinkedIn." });
+                    return;
+                }
+                const profiles = request.profiles || [];
+                if (!profiles.length) {
+                    sendResponse({ success: false, error: "Aucun profil à scanner." });
+                    return;
+                }
+                const results = [];
+                for (const profile of profiles) {
+                    if (window.location.href !== profile.profileUrl) {
+                        await new Promise(resolve => {
+                            window.location.href = profile.profileUrl;
+                            setTimeout(resolve, 4000);
+                        });
+                    }
+                    const posts = collectRecentPosts(10);
+                    results.push({ profileUrl: profile.profileUrl, posts });
+                }
+                sendResponse({ success: true, results });
+            })();
+            return true;
+        }
+        if (request.action === "SCAN_PROFILE_POSTS") {
+            (async () => {
+                if (isLoginPage()) {
+                    sendResponse({ success: false, error: "Veuillez vous connecter à LinkedIn." });
+                    return;
+                }
+                const posts = await scrollAndCollect(10);
+                sendResponse({ success: true, posts });
             })();
             return true;
         }
