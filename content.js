@@ -48,12 +48,26 @@ if (!window.ghostlyLoaded) {
             label.includes('invitation');
     };
 
+    const isPendingOrConnectedLabel = (label) => {
+        if (!label) return false;
+        return label.includes('en attente') ||
+            label.includes('pending') ||
+            label.includes('message') ||
+            label.includes('messagerie') ||
+            label.includes('suivi') ||
+            label.includes('following') ||
+            label.includes('relation') ||
+            label.includes('connected');
+    };
+
     const findConnectButton = (ctx = document) => {
-        const buttons = Array.from(ctx.querySelectorAll('button'));
+        const profileMain = ctx.querySelector('main') || ctx;
+        const buttons = Array.from(profileMain.querySelectorAll('button'));
         const match = buttons.find(btn => {
             const label = getElementLabel(btn);
             if (!isConnectLabel(label)) return false;
             if (label.includes('déconnecter') || label.includes('disconnect')) return false;
+            if (isPendingOrConnectedLabel(label)) return false;
             return true;
         });
         return match || null;
@@ -83,8 +97,10 @@ if (!window.ghostlyLoaded) {
         forceClick(moreBtn);
         await new Promise(r => setTimeout(r, 500));
 
-        const options = Array.from(document.querySelectorAll('div[role="menuitem"], li[role="menuitem"], button, div[role="button"]'));
-        const connectOption = options.find(el => isConnectLabel(getElementLabel(el)));
+        const menuRoot = document.querySelector('.artdeco-dropdown__content-inner, [role="menu"], .artdeco-dropdown__content');
+        const scope = menuRoot || document;
+        const options = Array.from(scope.querySelectorAll('div[role="menuitem"], li[role="menuitem"], button, div[role="button"]'));
+        const connectOption = options.find(el => isConnectLabel(getElementLabel(el)) && !isPendingOrConnectedLabel(getElementLabel(el)));
         if (!connectOption) return false;
         forceClick(connectOption.closest('button') || connectOption);
         return true;
@@ -94,16 +110,15 @@ if (!window.ghostlyLoaded) {
     const hasPendingOrConnectedState = () => {
         const scope = document.querySelector('main') || document;
         const buttons = Array.from(scope.querySelectorAll('button'));
-        return buttons.some(btn => {
-            const label = getElementLabel(btn);
-            return label.includes('en attente') ||
-                label.includes('pending') ||
-                label.includes('message') ||
-                label.includes('messagerie') ||
-                label.includes('suivi') ||
-                label.includes('following') ||
-                label.includes('relation');
-        });
+        return buttons.some(btn => isPendingOrConnectedLabel(getElementLabel(btn)));
+    };
+
+    const waitForPendingOrConnectedState = async (attempts = 8, delay = 700) => {
+        for (let i = 0; i < attempts; i++) {
+            if (hasPendingOrConnectedState()) return true;
+            await new Promise(r => setTimeout(r, delay));
+        }
+        return false;
     };
 
     const completeInviteModal = async (customMessage) => {
@@ -126,7 +141,7 @@ if (!window.ghostlyLoaded) {
             }
         }
 
-        const sendButton = findByText('button', ['envoyer', 'send']) || findByText('span', ['envoyer', 'send']);
+        const sendButton = findByText('button', ['envoyer', 'send'], modal) || findByText('span', ['envoyer', 'send'], modal);
         const sendClickable = sendButton ? (sendButton.closest('button') || sendButton) : null;
         if (sendClickable) {
             forceClick(sendClickable);
@@ -636,8 +651,8 @@ if (!window.ghostlyLoaded) {
                     return;
                 }
 
-                await new Promise(r => setTimeout(r, 1200));
-                if (!hasPendingOrConnectedState()) {
+                const confirmed = await waitForPendingOrConnectedState(10, 800);
+                if (!confirmed) {
                     sendResponse({ success: false, error: "Invitation non confirmée (état LinkedIn inchangé)." });
                     return;
                 }
