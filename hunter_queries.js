@@ -1,9 +1,13 @@
-const HUNTER_ROOT = typeof window !== "undefined" ? window : globalThis;
+const HUNTER_ROOT = typeof globalThis !== "undefined"
+    ? globalThis
+    : (typeof window !== "undefined" ? window : {});
 
 HUNTER_ROOT.buildHunterQuery = (keyword, customQuery, filters = {}) => {
+    const hunterQueries = HUNTER_ROOT.HUNTER_QUERIES || {};
+    const categoryQuery = hunterQueries[(keyword || "").trim()] || "";
     const base = customQuery && customQuery.trim()
         ? customQuery.trim()
-        : (keyword || "").trim();
+        : (categoryQuery || (keyword || "").trim());
     const parts = [];
     if (base) parts.push(`(${base})`);
     if (filters.location) parts.push(filters.location);
