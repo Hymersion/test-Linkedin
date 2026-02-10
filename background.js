@@ -478,13 +478,23 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
               sendResponse({ success: false, error: "Aucun profil suivi dans cette catégorie." });
               return;
           }
-          const payload = filtered.slice(0, 10);
+          const limit = Math.max(1, Number(request.testLimit || 10));
+          const payload = filtered.slice(0, limit);
           let totalPosts = 0;
+          const suggestions = [];
           for (const target of payload) {
               const activityUrl = target.profileUrl.endsWith("/")
                   ? `${target.profileUrl}recent-activity/all/`
                   : `${target.profileUrl}/recent-activity/all/`;
-              const tabId = await new Promise(resolve => {
+                  suggestions.push({
+                      profileUrl: target.profileUrl,
+                      posts: scanResult.posts
+                  });
+                  return {
+                      ...t,
+                      lastScanAt: now,
+                      pendingComments: suggestions.find(s => s.profileUrl === t.profileUrl) || null
+                  };
                   chrome.tabs.create({ url: activityUrl, active: false }, tab => resolve(tab.id));
               });
               const waitForTabComplete = () => new Promise(resolve => {

@@ -51,6 +51,7 @@ const initDashboard = () => {
     const autoFollowedPreview = document.getElementById('btn_auto_followed_preview');
     const autoFollowedPublish = document.getElementById('btn_auto_followed_publish');
     const autoObjectives = document.getElementById('auto_objectives');
+    const autoTestLimit = document.getElementById('auto_test_limit');
     const autoScheduleTimeButtons = document.querySelectorAll('[data-time]');
     const autoScheduleDayButtons = document.querySelectorAll('[data-day]');
     const autoScheduleEvery = document.getElementById('auto_schedule_every');
@@ -410,6 +411,7 @@ const initDashboard = () => {
     if (autoFollowedPreview) {
         autoFollowedPreview.addEventListener('click', () => {
             const category = autoTargetsCategorySelect ? autoTargetsCategorySelect.value : 'all';
+            const testLimit = autoTestLimit ? Number(autoTestLimit.value) : 2;
             if (!chromeAvailable) {
                 setHunterStatus("Fonctionnalité indisponible hors extension.", true);
                 return;
@@ -418,7 +420,8 @@ const initDashboard = () => {
             chrome.runtime.sendMessage({
                 action: "START_FOLLOWED_SCAN",
                 category
-                ,objectives: autoObjectives ? autoObjectives.value.trim() : ""
+                ,objectives: autoObjectives ? autoObjectives.value.trim() : "",
+                testLimit
             }, response => {
                 if (!response || !response.success) {
                     setHunterStatus(response && response.error ? response.error : "Test de scan échoué.", true);
