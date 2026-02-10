@@ -341,29 +341,79 @@ const waitTabComplete = (tabId, timeoutMs) => new Promise((resolve, reject) => {
 
 const publishSuggestionsForTarget = async ({ tabId, target, suggestions }) => {
     const profileUrl = target && target.profileUrl ? target.profileUrl : "";
+    const sourceSuggestions = Array.isArray(suggestions) ? suggestions : [];
+    const attempted = sourceSuggestions.length;
+    const updatedSuggestions = [];
+    let posted = 0;
+
+    const buildPendingComments = () => ({
+        ...(target.pendingComments || {}),
+        profileUrl,
+        suggestions: updatedSuggestions,
+        lastPublishedAt: Date.now()
+    });
+
+    const failRemainingSuggestions = (errorMessage) => {
+        while (updatedSuggestions.length < sourceSuggestions.length) {
+            const suggestion = sourceSuggestions[updatedSuggestions.length];
+            if (suggestion && (suggestion.status || "draft") === "published") {
+                updatedSuggestions.push(suggestion);
+                continue;
+            }
+            updatedSuggestions.push({
+                ...suggestion,
+                status: "error",
+                error: errorMessage || "Échec de publication LinkedIn."
+            });
+        }
+    };
+
     console.log("[PUBLISH_FOLLOWED_SCAN] publishSuggestionsForTarget:start", {
         tabId,
         profileUrl,
-        suggestionsCount: Array.isArray(suggestions) ? suggestions.length : 0
+        suggestionsCount: sourceSuggestions.length
     });
     if (!profileUrl) {
         console.warn("[PUBLISH_FOLLOWED_SCAN] publishSuggestionsForTarget:missing_profile_url");
-        return { success: false, posted: 0, attempted: 0, error: "URL profil manquante." };
+        failRemainingSuggestions("URL profil manquante.");
+        return {
+            success: false,
+            posted,
+            attempted,
+            error: "URL profil manquante.",
+            pendingComments: buildPendingComments()
+        };
     }
-    const activityUrl = profileUrl.endsWith("/")
-        ? `${profileUrl}recent-activity/all/`
-        : `${profileUrl}/recent-activity/all/`;
-    console.log("[PUBLISH_FOLLOWED_SCAN] publishSuggestionsForTarget:navigate", { activityUrl });
-    await chrome.tabs.update(tabId, { url: activityUrl });
-    await waitTabComplete(tabId, 20000);
-    console.log("[PUBLISH_FOLLOWED_SCAN] publishSuggestionsForTarget:tab_complete", { profileUrl });
-    await chrome.scripting.executeScript({ target: { tabId }, files: CONTENT_SCRIPT_FILES });
-    console.log("[PUBLISH_FOLLOWED_SCAN] publishSuggestionsForTarget:script_injected", { profileUrl });
+    try {
+        const activityUrl = profileUrl.endsWith("/")
+            ? `${profileUrl}recent-activity/all/`
+            : `${profileUrl}/recent-activity/all/`;
+        console.log("[PUBLISH_FOLLOWED_SCAN] publishSuggestionsForTarget:navigate", { activityUrl });
+        await chrome.tabs.update(tabId, { url: activityUrl });
+        await waitTabComplete(tabId, 20000);
+        console.log("[PUBLISH_FOLLOWED_SCAN] publishSuggestionsForTarget:tab_complete", { profileUrl });
+        await chrome.scripting.executeScript({ target: { tabId }, files: CONTENT_SCRIPT_FILES });
+        console.log("[PUBLISH_FOLLOWED_SCAN] publishSuggestionsForTarget:script_injected", { profileUrl });
+    } catch (navigationError) {
+        const errorMessage = navigationError && navigationError.message
+            ? navigationError.message
+            : "Navigation ou injection impossible.";
+        console.error("[PUBLISH_FOLLOWED_SCAN] publishSuggestionsForTarget:navigation_failed", {
+            profileUrl,
+            errorMessage,
+            navigationError
+        });
+        failRemainingSuggestions(errorMessage);
+        return {
+            success: false,
+            posted,
+            attempted,
+            error: errorMessage,
+            pendingComments: buildPendingComments()
+        };
+    }
 
-    let posted = 0;
-    const attempted = suggestions.length;
-    const updatedSuggestions = [];
-    for (const suggestion of suggestions) {
+    for (const suggestion of sourceSuggestions) {
         const status = suggestion && suggestion.status ? suggestion.status : "draft";
         console.log("[PUBLISH_FOLLOWED_SCAN] publishSuggestionsForTarget:suggestion", {
             profileUrl,
@@ -378,25 +428,38 @@ const publishSuggestionsForTarget = async ({ tabId, target, suggestions }) => {
             updatedSuggestions.push({ ...suggestion, status: "error", error: "Suggestion incomplète." });
             continue;
         }
-        const publishResult = await new Promise(resolve => {
-            chrome.tabs.sendMessage(tabId, {
-                action: "COMMENT_ON_FEED_POST_BY_URN",
-                targetURN: suggestion.urn,
-                text: suggestion.comment
-            }, resolve);
-        });
+        try {
+            const publishResult = await new Promise(resolve => {
+                chrome.tabs.sendMessage(tabId, {
+                    action: "COMMENT_ON_FEED_POST_BY_URN",
+                    targetURN: suggestion.urn,
+                    text: suggestion.comment
+                }, resolve);
+            });
 
-        if (publishResult && publishResult.success) {
-            console.log("[PUBLISH_FOLLOWED_SCAN] publishSuggestionsForTarget:publish_success", { profileUrl, urn: suggestion.urn });
-            posted += 1;
-            updatedSuggestions.push({ ...suggestion, status: "published", publishedAt: Date.now() });
-        } else {
-            console.warn("[PUBLISH_FOLLOWED_SCAN] publishSuggestionsForTarget:publish_failed", {
+            if (publishResult && publishResult.success) {
+                console.log("[PUBLISH_FOLLOWED_SCAN] publishSuggestionsForTarget:publish_success", { profileUrl, urn: suggestion.urn });
+                posted += 1;
+                updatedSuggestions.push({ ...suggestion, status: "published", publishedAt: Date.now() });
+            } else {
+                console.warn("[PUBLISH_FOLLOWED_SCAN] publishSuggestionsForTarget:publish_failed", {
+                    profileUrl,
+                    urn: suggestion.urn,
+                    publishResult
+                });
+                updatedSuggestions.push({ ...suggestion, status: "error", error: "Échec de publication LinkedIn." });
+            }
+        } catch (publishError) {
+            const errorMessage = publishError && publishError.message
+                ? publishError.message
+                : "Échec de publication LinkedIn.";
+            console.warn("[PUBLISH_FOLLOWED_SCAN] publishSuggestionsForTarget:publish_exception", {
                 profileUrl,
                 urn: suggestion.urn,
-                publishResult
+                errorMessage,
+                publishError
             });
-            updatedSuggestions.push({ ...suggestion, status: "error", error: "Échec de publication LinkedIn." });
+            updatedSuggestions.push({ ...suggestion, status: "error", error: errorMessage });
         }
         await new Promise(r => setTimeout(r, 1200));
     }
@@ -407,12 +470,7 @@ const publishSuggestionsForTarget = async ({ tabId, target, suggestions }) => {
         success: posted > 0,
         posted,
         attempted,
-        pendingComments: {
-            ...(target.pendingComments || {}),
-            profileUrl,
-            suggestions: updatedSuggestions,
-            lastPublishedAt: Date.now()
-        }
+        pendingComments: buildPendingComments()
     };
 };
 
