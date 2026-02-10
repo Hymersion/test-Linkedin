@@ -352,6 +352,13 @@ const waitTabComplete = (tabId, timeoutMs) => new Promise((resolve, reject) => {
     chrome.tabs.onUpdated.addListener(onUpdated);
 });
 
+const buildActivityUrl = (profileUrl) => {
+    if (!profileUrl) return "";
+    return profileUrl.endsWith("/")
+        ? `${profileUrl}recent-activity/all/`
+        : `${profileUrl}/recent-activity/all/`;
+};
+
 const runHunter = async ({ url, category, settings, consentGiven }) => {
     const hasConsent = await ensureConsent(consentGiven);
     if (!hasConsent) {
@@ -666,9 +673,7 @@ if (runtimeApi && runtimeApi.onMessage) runtimeApi.onMessage.addListener((reques
               tabId = await createInactiveTab("https://www.linkedin.com/feed/");
               for (const target of payload) {
                   if (!target.profileUrl) continue;
-                  const activityUrl = target.profileUrl.endsWith("/")
-                      ? `${target.profileUrl}recent-activity/all/`
-                      : `${target.profileUrl}/recent-activity/all/`;
+                  const activityUrl = buildActivityUrl(target.profileUrl);
                   await chrome.tabs.update(tabId, { url: activityUrl });
                   await waitTabComplete(tabId, 15000);
                   await chrome.scripting.executeScript({ target: { tabId }, files: CONTENT_SCRIPT_FILES });
@@ -714,7 +719,112 @@ if (runtimeApi && runtimeApi.onMessage) runtimeApi.onMessage.addListener((reques
   }
   if (request.action === "PUBLISH_FOLLOWED_SCAN") {
       (async () => {
-          sendResponse({ success: true });
+          let tabId = null;
+          try {
+              const targets = await getTargets();
+              const category = request.category || "all";
+              const filtered = category === "all"
+                  ? targets
+                  : targets.filter(t => (t.category || "").toLowerCase() === category.toLowerCase());
+
+              const publishableTargets = filtered.filter(target =>
+                  target
+                  && target.profileUrl
+                  && target.pendingComments
+                  && Array.isArray(target.pendingComments.suggestions)
+                  && target.pendingComments.suggestions.some(s => s && s.comment && s.urn && s.status !== "posted")
+              );
+
+              if (!publishableTargets.length) {
+                  sendResponse({ success: false, error: "Aucun commentaire en attente de publication." });
+                  return;
+              }
+
+              tabId = await createInactiveTab("https://www.linkedin.com/feed/");
+              const updatesByProfile = new Map();
+              const publishedSummariesByProfile = new Map();
+              let attempted = 0;
+              let published = 0;
+
+              for (const target of publishableTargets) {
+                  const activityUrl = buildActivityUrl(target.profileUrl);
+                  if (!activityUrl) continue;
+                  await chrome.tabs.update(tabId, { url: activityUrl });
+                  await waitTabComplete(tabId, 15000);
+                  await chrome.scripting.executeScript({ target: { tabId }, files: CONTENT_SCRIPT_FILES });
+
+                  const currentPending = target.pendingComments || {};
+                  const currentSuggestions = Array.isArray(currentPending.suggestions) ? currentPending.suggestions : [];
+                  const updatedSuggestions = [];
+                  const profileSummary = [];
+
+                  for (const suggestion of currentSuggestions) {
+                      if (!suggestion || !suggestion.comment || !suggestion.urn || suggestion.status === "posted") {
+                          updatedSuggestions.push(suggestion);
+                          continue;
+                      }
+
+                      attempted += 1;
+                      const publishResult = await new Promise(resolve => {
+                          chrome.tabs.sendMessage(tabId, {
+                              action: "COMMENT_ON_FEED_POST_BY_URN",
+                              targetURN: suggestion.urn,
+                              text: suggestion.comment
+                          }, resolve);
+                      });
+
+                      const isSuccess = Boolean(publishResult && publishResult.success);
+                      const timestamp = Date.now();
+                      if (isSuccess) {
+                          published += 1;
+                          profileSummary.push(suggestion.comment.substring(0, 80));
+                      }
+
+                      updatedSuggestions.push({
+                          ...suggestion,
+                          status: isSuccess ? "posted" : "failed",
+                          publishedAt: isSuccess ? timestamp : (suggestion.publishedAt || null),
+                          lastPublishError: isSuccess ? "" : "Publication impossible sur ce post."
+                      });
+                      await new Promise(r => setTimeout(r, 1200));
+                  }
+
+                  updatesByProfile.set(target.profileUrl, {
+                      ...currentPending,
+                      suggestions: updatedSuggestions,
+                      lastPublishAt: Date.now()
+                  });
+                  publishedSummariesByProfile.set(target.profileUrl, profileSummary);
+              }
+
+              const updatedTargets = targets.map(target => {
+                  if (!updatesByProfile.has(target.profileUrl)) return target;
+                  const profileSummary = publishedSummariesByProfile.get(target.profileUrl) || [];
+                  const nextCount = (target.commentsCount || 0) + profileSummary.length;
+                  const previousSummary = Array.isArray(target.commentsSummary) ? target.commentsSummary : [];
+                  return {
+                      ...target,
+                      commentsCount: nextCount,
+                      commentsSummary: previousSummary.concat(profileSummary).slice(-10),
+                      pendingComments: updatesByProfile.get(target.profileUrl)
+                  };
+              });
+
+              await setTargets(updatedTargets);
+              sendResponse({
+                  success: published > 0,
+                  attempted,
+                  published,
+                  message: `Publication terminée: ${published}/${attempted} commentaire(s) publiés.`
+              });
+          } catch (error) {
+              const errorMessage = error && error.message ? error.message : "Erreur pendant la publication des commentaires.";
+              sendResponse({ success: false, error: errorMessage });
+          } finally {
+              if (typeof tabId === "number") {
+                  chrome.tabs.remove(tabId, () => void chrome.runtime.lastError);
+              }
+          }
       })();
       return true;
   }
