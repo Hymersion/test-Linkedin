@@ -86,6 +86,72 @@ const setRejected = (rejected) => new Promise(resolve => {
     storageLocalApi.set({ [REJECTED_KEY]: rejected }, resolve);
 });
 
+const getLocalValue = (key, fallback = "") => new Promise(resolve => {
+    if (!storageLocalApi) {
+        resolve(fallback);
+        return;
+    }
+    storageLocalApi.get([key], result => resolve(result && typeof result[key] !== "undefined" ? result[key] : fallback));
+});
+
+const buildFallbackHookMessage = ({ target, persona, customContext }) => {
+    const firstName = String(target.fullName || "").trim().split(" ")[0] || "";
+    const headline = String(target.headline || "").trim();
+    const suggestion = target && target.pendingComments && Array.isArray(target.pendingComments.suggestions)
+        ? target.pendingComments.suggestions.find(s => s && s.postText)
+        : null;
+    const postHint = suggestion && suggestion.postText
+        ? String(suggestion.postText).replace(/\s+/g, " ").trim().slice(0, 120)
+        : "vos derniers contenus";
+    const personaHint = String(persona || "").replace(/\s+/g, " ").trim().slice(0, 100);
+    const customHint = String(customContext || "").replace(/\s+/g, " ").trim().slice(0, 120);
+    const intro = firstName ? `Bonjour ${firstName},` : "Bonjour,";
+    const value = headline ? ` votre angle sur ${headline}` : " vos publications";
+    const contextLine = customHint ? ` Je travaille actuellement sur ${customHint}.` : "";
+    const personaLine = personaHint ? ` Avec mon positionnement (${personaHint}),` : "";
+    return `${intro} j'ai beaucoup apprécié${value}, notamment votre point sur "${postHint}".${personaLine}${contextLine} Ravi d'échanger si cela vous parle.`.replace(/\s+/g, " ").trim();
+};
+
+const generateHookMessageForTarget = async ({ target, persona, customContext }) => {
+    const fallback = buildFallbackHookMessage({ target, persona, customContext });
+    const apiKey = await getApiKey();
+    if (!apiKey) {
+        return { message: fallback, source: "fallback" };
+    }
+
+    const relevantPosts = target && target.pendingComments && Array.isArray(target.pendingComments.suggestions)
+        ? target.pendingComments.suggestions.slice(0, 3).map(s => s && s.postText ? String(s.postText).replace(/\s+/g, " ").trim().slice(0, 220) : "").filter(Boolean)
+        : [];
+
+    const { ok, data } = await fetchOpenAI({
+        model: "gpt-4o",
+        messages: [{
+            role: "user",
+            content: `Tu rédiges un message d'accroche LinkedIn ultra personnalisé (1-2 phrases, maximum 320 caractères).
+
+Mes données (prospecteur): ${persona || "profil non renseigné"}
+Contexte business/personnalisation: ${customContext || "non renseigné"}
+Données cible: nom=${target.fullName || "N/A"}, headline=${target.headline || "N/A"}, catégorie=${target.category || "N/A"}
+Indices posts cible: ${relevantPosts.length ? relevantPosts.join(" | ") : "aucun"}
+
+Contraintes:
+- Ton humain, spécifique, non générique
+- Pas de promesse commerciale agressive
+- Mentionner un détail crédible du profil/post
+- Répondre uniquement avec le message final, sans guillemets.`
+        }],
+        temperature: 0.5
+    });
+
+    const content = ok && data && data.choices && data.choices[0] && data.choices[0].message
+        ? String(data.choices[0].message.content || "").trim()
+        : "";
+    if (!content) {
+        return { message: fallback, source: "fallback" };
+    }
+    return { message: content.slice(0, 320), source: "ai" };
+};
+
 const fetchOpenAI = async (payload) => {
     const apiKey = await getApiKey();
     if (!apiKey) {
@@ -916,8 +982,36 @@ if (runtimeApi && runtimeApi.onMessage) runtimeApi.onMessage.addListener((reques
               sendResponse({ success: false, error: "Profil introuvable." });
               return;
           }
-          const message = `Bonjour ${target.fullName || ""}, j’ai apprécié vos contenus sur ${target.headline || "LinkedIn"}.`;
-          sendResponse({ success: true, message });
+
+          const storedPersona = await getLocalValue("persona", "");
+          const persona = String(request.persona || storedPersona || "").trim();
+          const storedHookContext = await getLocalValue("hookCustomContext", "");
+          const customContext = String(request.customContext || storedHookContext || "").trim();
+
+          const hookResult = await generateHookMessageForTarget({ target, persona, customContext });
+          const message = hookResult.message || "";
+          if (!message) {
+              sendResponse({ success: false, error: "Impossible de générer un message d'accroche." });
+              return;
+          }
+
+          const now = Date.now();
+          const updatedTargets = targets.map(item => {
+              if (item.profileUrl !== target.profileUrl) return item;
+              return {
+                  ...item,
+                  hookMessage: message,
+                  hookGeneratedAt: now,
+                  hookMeta: {
+                      source: hookResult.source || "fallback",
+                      customContext,
+                      personaSnippet: persona.slice(0, 120)
+                  }
+              };
+          });
+          await setTargets(updatedTargets);
+
+          sendResponse({ success: true, message, source: hookResult.source || "fallback", generatedAt: now });
       })();
       return true;
   }
