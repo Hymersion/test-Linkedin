@@ -286,8 +286,8 @@ const initDashboard = () => {
                             <a href="${t.profileUrl}" target="_blank" rel="noopener noreferrer">${t.profileUrl}</a>
                         </div>
                         <div>
-                            <button class="btn-secondary" data-connect="${t.profileUrl}">🔗</button>
-                            <button class="btn-secondary" data-hook="${t.profileUrl}">✉️</button>
+                            <button class="btn-secondary" data-connect="${t.profileUrl}" title="Envoyer une demande de connexion">🤝</button>
+                            <button class="btn-secondary" data-hook="${t.profileUrl}" title="Générer un message d'accroche personnalisé">✉️</button>
                         </div>
                     </div>
                 `;
@@ -317,14 +317,31 @@ const initDashboard = () => {
                 if (!url) return;
                 if (!chromeAvailable) {
                     setHunterStatus("Fonctionnalité indisponible hors extension.", true);
+                    alert("Fonctionnalité indisponible hors extension.");
                     return;
                 }
-                chrome.runtime.sendMessage({ action: "GENERATE_HOOK_MESSAGE", profileUrl: url }, response => {
-                    if (!response || !response.success) {
-                        setHunterStatus(response && response.error ? response.error : "Génération échouée.", true);
+
+                setHunterStatus("Ouverture LinkedIn et préparation du brouillon de message...");
+                chrome.runtime.sendMessage({ action: "CONTACT_FOLLOWED_PROFILE", profileUrl: url, objectives: autoObjectives ? autoObjectives.value.trim() : "" }, response => {
+                    const runtimeError = chrome.runtime && chrome.runtime.lastError ? chrome.runtime.lastError.message : "";
+                    if (runtimeError) {
+                        setHunterStatus(`Erreur extension: ${runtimeError}`, true);
+                        alert(`Erreur extension: ${runtimeError}`);
                         return;
                     }
-                    setHunterStatus(`Message d'accroche: ${response.message}`);
+                    if (!response || !response.success) {
+                        const errorText = response && response.error ? response.error : "Contact échoué.";
+                        setHunterStatus(errorText, true);
+                        alert(errorText);
+                        return;
+                    }
+
+                    const modeText = response.mode === "message" ? "message direct" : (response.mode === "connect" ? "invitation avec note" : "contact");
+                    setHunterStatus(`Interface LinkedIn ouverte (${modeText}). Message pré-rempli (envoi manuel).`);
+
+                    if (response.generatedMessage && navigator.clipboard && navigator.clipboard.writeText) {
+                        navigator.clipboard.writeText(response.generatedMessage).catch(() => {});
+                    }
                 });
             });
         });

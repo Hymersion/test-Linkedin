@@ -220,20 +220,24 @@ const buildFallbackComment = (postText, objectiveText) => {
     return `Merci pour ce partage, le passage sur "${summary}" est particulièrement utile et concret.`;
 };
 
+const buildFallbackSuggestions = (target, candidatePosts, objectives, source = "fallback") => {
+    return candidatePosts.slice(0, 3).map((post, idx) => ({
+        id: `${target.profileUrl || 'profile'}-${Date.now()}-${idx}`,
+        urn: post.urn || "",
+        postText: post.text,
+        comment: buildFallbackComment(post.text, objectives),
+        source,
+        status: "draft"
+    }));
+};
+
 const generateCommentSuggestions = async (target, posts, objectives) => {
     const apiKey = await getApiKey();
     const candidatePosts = Array.isArray(posts) ? posts.filter(p => p && p.text).slice(0, 10) : [];
     if (!candidatePosts.length) return [];
 
     if (!apiKey) {
-        return candidatePosts.slice(0, 3).map((post, idx) => ({
-            id: `${target.profileUrl || 'profile'}-${Date.now()}-${idx}`,
-            urn: post.urn || "",
-            postText: post.text,
-            comment: buildFallbackComment(post.text, objectives),
-            source: "fallback",
-            status: "draft"
-        }));
+        return buildFallbackSuggestions(target, candidatePosts, objectives, "fallback_no_api_key");
     }
 
     const promptPosts = candidatePosts.map((post, index) => `${index + 1}. ${post.text}`).join("\n\n");
@@ -247,15 +251,11 @@ const generateCommentSuggestions = async (target, posts, objectives) => {
     });
 
     if (!ok) {
-        return [{
-            id: `${target.profileUrl || 'profile'}-${Date.now()}-error`,
-            urn: "",
-            postText: "",
-            comment: "",
-            reason: error || "Erreur IA",
-            source: "ai_error",
-            status: "error"
-        }];
+        console.warn("[START_FOLLOWED_SCAN] ai_generation_failed_using_fallback", {
+            profileUrl: target.profileUrl || "",
+            error: error || "Erreur IA"
+        });
+        return buildFallbackSuggestions(target, candidatePosts, objectives, "fallback_ai_error");
     }
 
     const content = data && data.choices && data.choices[0] && data.choices[0].message
@@ -263,7 +263,7 @@ const generateCommentSuggestions = async (target, posts, objectives) => {
         : "";
     const parsed = parseJsonSafe(content) || {};
     const suggestions = Array.isArray(parsed.suggestions) ? parsed.suggestions : [];
-    return suggestions
+    const aiSuggestions = suggestions
         .map((s, idx) => {
             const postIndex = Number(s.index) - 1;
             const linkedPost = candidatePosts[postIndex];
@@ -280,6 +280,13 @@ const generateCommentSuggestions = async (target, posts, objectives) => {
         })
         .filter(Boolean)
         .slice(0, 5);
+
+    if (aiSuggestions.length) return aiSuggestions;
+
+    console.warn("[START_FOLLOWED_SCAN] ai_generation_empty_using_fallback", {
+        profileUrl: target.profileUrl || ""
+    });
+    return buildFallbackSuggestions(target, candidatePosts, objectives, "fallback_ai_empty");
 };
 
 const connectToProfile = async (profileUrl) => {
@@ -303,6 +310,35 @@ const connectToProfile = async (profileUrl) => {
     });
     chrome.tabs.remove(tabId);
     return result || { success: false, error: "Connexion non exécutée." };
+};
+
+
+const contactProfileSmart = async ({ profileUrl, message }) => {
+    if (!profileUrl) return { success: false, error: "URL profil manquante." };
+    if (!String(message || "").trim()) return { success: false, error: "Message vide." };
+
+    const tabId = await new Promise(resolve => {
+        chrome.tabs.create({ url: profileUrl, active: true }, tab => resolve(tab && tab.id));
+    });
+    if (typeof tabId !== "number") return { success: false, error: "Impossible d'ouvrir le profil LinkedIn." };
+
+    try {
+        await waitTabComplete(tabId, 20000);
+        await chrome.scripting.executeScript({ target: { tabId }, files: CONTENT_SCRIPT_FILES });
+        const result = await new Promise(resolve => {
+            chrome.tabs.sendMessage(tabId, {
+                action: "CONTACT_PROFILE_WITH_MESSAGE",
+                text: message,
+                autoSend: false
+            }, resolve);
+        });
+        if (!result || !result.success) {
+            return { success: false, error: (result && result.error) || "Impossible d'ouvrir l'interface de message." };
+        }
+        return { success: true, mode: result.mode || "unknown", sent: false, message };
+    } catch (error) {
+        return { success: false, error: error && error.message ? error.message : "Erreur contact LinkedIn." };
+    }
 };
 
 const createInactiveTab = (url) => new Promise((resolve, reject) => {
@@ -338,6 +374,67 @@ const waitTabComplete = (tabId, timeoutMs) => new Promise((resolve, reject) => {
     }, timeoutMs || 15000);
     chrome.tabs.onUpdated.addListener(onUpdated);
 });
+
+
+const getStoredPersona = () => new Promise(resolve => {
+    if (!storageLocalApi) {
+        resolve("Expert LinkedIn B2B");
+        return;
+    }
+    storageLocalApi.get(["persona"], result => {
+        const persona = (result && result.persona ? String(result.persona) : "").trim();
+        resolve(persona || "Expert LinkedIn B2B");
+    });
+});
+
+
+const getStoredMyProfileContext = () => new Promise(resolve => {
+    if (!storageLocalApi) {
+        resolve(null);
+        return;
+    }
+    storageLocalApi.get(["myProfileContext"], result => {
+        const profile = result && result.myProfileContext ? result.myProfileContext : null;
+        resolve(profile && typeof profile === "object" ? profile : null);
+    });
+});
+
+const buildHookFallbackMessage = (target, myProfile, objectives, targetInsights) => {
+    const firstName = (target.fullName || "").trim().split(/\s+/)[0] || "";
+    const greeting = firstName ? `Bonjour ${firstName},` : "Bonjour,";
+    const headline = target.headline || "vos publications";
+    const personalAngle = objectives || (myProfile && myProfile.headline) || "nos objectifs de prospection";
+    const insight = targetInsights || "vos derniers posts et échanges";
+    return `${greeting} j’ai particulièrement apprécié ${headline}. En lien avec ${personalAngle}, votre angle sur ${insight} m’a donné une idée concrète de collaboration. Ouvert à échanger 10 min cette semaine ?`;
+};
+
+const generateHookMessageFromContext = async ({ target, objectives, persona, myProfile, targetInsights }) => {
+    const prompt = [
+        `Persona commerciale: ${persona || "Expert LinkedIn"}`,
+        `Objectifs internes: ${objectives || "non précisés"}`,
+        `Mes infos: ${myProfile ? `${myProfile.name || ""} | ${myProfile.headline || ""} | ${myProfile.about || ""} | ${myProfile.experience || ""}` : "non disponibles"}`,
+        `Cible: ${target.fullName || "Profil"} | ${target.headline || ""}`,
+        `Description/profil cible: ${target.about || target.description || "non disponible"}`,
+        `Signaux cible: ${targetInsights || "non disponible"}`,
+        'Tâche: Génère un message personnalisé de prise de contact LinkedIn en français, naturel, précis, sans ton robotique, 2-4 phrases max, avec une accroche contextualisée et un CTA léger.',
+        'Format JSON strict: {"message":"...","why":"..."}'
+    ].join("\n");
+
+    const { ok, data } = await fetchOpenAI({
+        model: "gpt-4o",
+        messages: [{ role: "user", content: prompt }],
+        temperature: 0.5
+    });
+
+    if (!ok) return null;
+
+    const content = data && data.choices && data.choices[0] && data.choices[0].message
+        ? data.choices[0].message.content
+        : "";
+    const parsed = parseJsonSafe(content);
+    if (!parsed || !parsed.message) return null;
+    return String(parsed.message).trim();
+};
 
 const publishSuggestionsForTarget = async ({ tabId, target, suggestions }) => {
     const profileUrl = target && target.profileUrl ? target.profileUrl : "";
@@ -414,6 +511,18 @@ const publishSuggestionsForTarget = async ({ tabId, target, suggestions }) => {
             lastPublishedAt: Date.now()
         }
     };
+};
+
+const persistTargetPendingComments = async ({ targets, profileUrl, pendingComments }) => {
+    const updatedTargets = targets.map(currentTarget => {
+        if (currentTarget.profileUrl !== profileUrl) return currentTarget;
+        return {
+            ...currentTarget,
+            pendingComments
+        };
+    });
+    await setTargets(updatedTargets);
+    return updatedTargets;
 };
 
 const runHunter = async ({ url, category, settings, consentGiven }) => {
@@ -845,11 +954,11 @@ if (runtimeApi && runtimeApi.onMessage) runtimeApi.onMessage.addListener((reques
               let posted = 0;
               let attempted = 0;
               const failedProfiles = [];
-              const byProfileUrl = new Map(targets.map(target => [target.profileUrl, target.pendingComments]));
               let updatedTargets = targets;
 
               for (const target of targetsWithSuggestions) {
                   const suggestions = target.pendingComments.suggestions || [];
+                  let pendingCommentsToPersist = target.pendingComments;
                   console.log("[PUBLISH_FOLLOWED_SCAN] processing_target", {
                       profileUrl: target.profileUrl,
                       fullName: target.fullName || null,
@@ -859,7 +968,7 @@ if (runtimeApi && runtimeApi.onMessage) runtimeApi.onMessage.addListener((reques
                       const publishResult = await publishSuggestionsForTarget({ tabId, target, suggestions });
                       posted += publishResult.posted || 0;
                       attempted += publishResult.attempted || 0;
-                      byProfileUrl.set(target.profileUrl, publishResult.pendingComments || target.pendingComments);
+                      pendingCommentsToPersist = publishResult.pendingComments || target.pendingComments;
                       if ((publishResult.posted || 0) === 0) {
                           failedProfiles.push(target.fullName || target.profileUrl || "Profil");
                       }
@@ -871,17 +980,14 @@ if (runtimeApi && runtimeApi.onMessage) runtimeApi.onMessage.addListener((reques
                       });
                       failedProfiles.push(target.fullName || target.profileUrl || "Profil");
                       attempted += suggestions.length;
-                      byProfileUrl.set(target.profileUrl, target.pendingComments);
+                      pendingCommentsToPersist = target.pendingComments;
                   }
 
-                  updatedTargets = updatedTargets.map(currentTarget => {
-                      if (!byProfileUrl.has(currentTarget.profileUrl)) return currentTarget;
-                      return {
-                          ...currentTarget,
-                          pendingComments: byProfileUrl.get(currentTarget.profileUrl)
-                      };
+                  updatedTargets = await persistTargetPendingComments({
+                      targets: updatedTargets,
+                      profileUrl: target.profileUrl,
+                      pendingComments: pendingCommentsToPersist
                   });
-                  await setTargets(updatedTargets);
                   console.log("[PUBLISH_FOLLOWED_SCAN] target_persisted", {
                       profileUrl: target.profileUrl,
                       posted,
@@ -908,16 +1014,105 @@ if (runtimeApi && runtimeApi.onMessage) runtimeApi.onMessage.addListener((reques
       })();
       return true;
   }
+  if (request.action === "CONTACT_FOLLOWED_PROFILE") {
+      (async () => {
+          try {
+              const targets = await getTargets();
+              const target = targets.find(t => t.profileUrl === request.profileUrl);
+              if (!target) {
+                  sendResponse({ success: false, error: "Profil introuvable." });
+                  return;
+              }
+
+              const persona = await getStoredPersona();
+              const objectives = request.objectives || "";
+              const myProfile = await getStoredMyProfileContext();
+              const suggestions = target.pendingComments && Array.isArray(target.pendingComments.suggestions)
+                  ? target.pendingComments.suggestions
+                  : [];
+              const targetInsights = [
+                  Array.isArray(target.commentsSummary) && target.commentsSummary.length ? `Commentaires observés: ${target.commentsSummary.join(" ; ")}` : "",
+                  suggestions.slice(0, 2).map(s => `${(s && s.postText) || ""} | ${(s && s.comment) || ""}`).filter(Boolean).join(" || "),
+                  target.headline ? `Headline: ${target.headline}` : ""
+              ].filter(Boolean).join("\n");
+
+              const aiMessage = await generateHookMessageFromContext({
+                  target,
+                  objectives,
+                  persona,
+                  myProfile,
+                  targetInsights
+              });
+              const message = aiMessage || buildHookFallbackMessage(target, myProfile, objectives, targetInsights || target.headline || "son activité");
+
+              const contactResult = await contactProfileSmart({ profileUrl: target.profileUrl, message });
+              sendResponse({
+                  ...contactResult,
+                  generatedMessage: message,
+                  source: aiMessage ? "ai" : "fallback"
+              });
+          } catch (error) {
+              const errorMessage = error && error.message ? error.message : "Erreur pendant le contact profil.";
+              console.error("[CONTACT_FOLLOWED_PROFILE] failed", { errorMessage, error });
+              sendResponse({ success: false, error: errorMessage });
+          }
+      })();
+      return true;
+  }
+
   if (request.action === "GENERATE_HOOK_MESSAGE") {
       (async () => {
-          const targets = await getTargets();
-          const target = targets.find(t => t.profileUrl === request.profileUrl);
-          if (!target) {
-              sendResponse({ success: false, error: "Profil introuvable." });
-              return;
+          try {
+              const targets = await getTargets();
+              const target = targets.find(t => t.profileUrl === request.profileUrl);
+              if (!target) {
+                  sendResponse({ success: false, error: "Profil introuvable." });
+                  return;
+              }
+
+              const persona = await getStoredPersona();
+              const objectives = request.objectives || "";
+              const myProfile = await getStoredMyProfileContext();
+              const suggestions = target.pendingComments && Array.isArray(target.pendingComments.suggestions)
+                  ? target.pendingComments.suggestions
+                  : [];
+              const suggestionSignals = suggestions
+                  .slice(0, 3)
+                  .map(s => `${(s && s.postText) || ""} | proposition: ${(s && s.comment) || ""}`)
+                  .filter(Boolean)
+                  .join(" || ");
+              const commentsSummary = Array.isArray(target.commentsSummary) ? target.commentsSummary : [];
+              const targetInsights = [
+                  commentsSummary.length ? `Commentaires observés: ${commentsSummary.join(" ; ")}` : "",
+                  suggestionSignals ? `Posts + commentaires suggérés: ${suggestionSignals}` : "",
+                  target.headline ? `Headline: ${target.headline}` : ""
+              ].filter(Boolean).join("\n");
+
+              const aiMessage = await generateHookMessageFromContext({
+                  target,
+                  objectives,
+                  persona,
+                  myProfile,
+                  targetInsights
+              });
+
+              const message = aiMessage || buildHookFallbackMessage(target, myProfile, objectives, targetInsights || target.headline || "son activité");
+
+              sendResponse({
+                  success: true,
+                  message,
+                  source: aiMessage ? "ai" : "fallback",
+                  context: {
+                      usedPersona: persona,
+                      usedMyProfile: Boolean(myProfile),
+                      usedTargetInsights: Boolean(targetInsights)
+                  }
+              });
+          } catch (error) {
+              const errorMessage = error && error.message ? error.message : "Erreur pendant la génération du message.";
+              console.error("[GENERATE_HOOK_MESSAGE] failed", { errorMessage, error });
+              sendResponse({ success: false, error: errorMessage });
           }
-          const message = `Bonjour ${target.fullName || ""}, j’ai apprécié vos contenus sur ${target.headline || "LinkedIn"}.`;
-          sendResponse({ success: true, message });
       })();
       return true;
   }
