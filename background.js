@@ -510,7 +510,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
               tabId = await new Promise((resolve, reject) => {
                   chrome.tabs.create({ url: "https://www.linkedin.com/feed/", active: false }, tab => {
                       if (chrome.runtime.lastError || !tab || typeof tab.id !== "number") {
-                          reject(new Error(chrome.runtime.lastError?.message || "Impossible de créer un onglet de scan."));
+                          const createTabError = chrome.runtime && chrome.runtime.lastError ? chrome.runtime.lastError.message : "";
+                          reject(new Error(createTabError || "Impossible de créer un onglet de scan."));
                           return;
                       }
                       resolve(tab.id);
@@ -565,7 +566,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
               await setTargets(updatedTargets);
               sendResponse({ success: true, count: payload.length, message: `Scan terminé: ${payload.length} profils, ${totalPosts} posts détectés.` });
           } catch (error) {
-              sendResponse({ success: false, error: error?.message || "Erreur pendant le scan des profils suivis." });
+              const errorMessage = error && error.message ? error.message : "Erreur pendant le scan des profils suivis.";
+              sendResponse({ success: false, error: errorMessage });
           } finally {
               if (typeof tabId === "number") {
                   chrome.tabs.remove(tabId, () => void chrome.runtime.lastError);
