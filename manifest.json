@@ -2,8 +2,26 @@
   "manifest_version": 3,
   "name": "Ghostly V127 - Atomic Scan",
   "version": "12.7",
-  "permissions": ["activeTab", "scripting", "storage", "alarms", "notifications"],
-  "host_permissions": ["https://www.linkedin.com/*", "https://api.openai.com/*"],
-  "background": { "service_worker": "background.js" },
-  "action": { "default_popup": "dashboard.html" }
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage",
+    "alarms",
+    "notifications",
+    "sidePanel"
+  ],
+  "host_permissions": [
+    "https://www.linkedin.com/*",
+    "https://api.openai.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Ouvrir Ghostly Dashboard",
+    "default_popup": "dashboard.html"
+  },
+  "side_panel": {
+    "default_path": "dashboard.html"
+  }
 }
