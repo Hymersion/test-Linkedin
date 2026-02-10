@@ -743,7 +743,7 @@ if (runtimeApi && runtimeApi.onMessage) runtimeApi.onMessage.addListener((reques
               });
               await setTargets(updatedTargets);
               sendResponse({ success: true, count: payload.length, message: `Scan terminé: ${payload.length} profils, ${totalPosts} posts détectés, ${totalSuggestions} propositions générées.` });
-          } catch (error) {
+          } catch {
               const errorMessage = error && error.message ? error.message : "Erreur pendant le scan des profils suivis.";
               sendResponse({ success: false, error: errorMessage });
           } finally {
@@ -779,27 +779,34 @@ if (runtimeApi && runtimeApi.onMessage) runtimeApi.onMessage.addListener((reques
               let posted = 0;
               let attempted = 0;
               const failedProfiles = [];
-              const byProfileUrl = new Map();
+              const byProfileUrl = new Map(targets.map(target => [target.profileUrl, target.pendingComments]));
+              let updatedTargets = targets;
 
               for (const target of targetsWithSuggestions) {
                   const suggestions = target.pendingComments.suggestions || [];
-                  const publishResult = await publishSuggestionsForTarget({ tabId, target, suggestions });
-                  posted += publishResult.posted || 0;
-                  attempted += publishResult.attempted || 0;
-                  byProfileUrl.set(target.profileUrl, publishResult.pendingComments || target.pendingComments);
-                  if ((publishResult.posted || 0) === 0) {
+                  try {
+                      const publishResult = await publishSuggestionsForTarget({ tabId, target, suggestions });
+                      posted += publishResult.posted || 0;
+                      attempted += publishResult.attempted || 0;
+                      byProfileUrl.set(target.profileUrl, publishResult.pendingComments || target.pendingComments);
+                      if ((publishResult.posted || 0) === 0) {
+                          failedProfiles.push(target.fullName || target.profileUrl || "Profil");
+                      }
+                  } catch (error) {
                       failedProfiles.push(target.fullName || target.profileUrl || "Profil");
+                      attempted += suggestions.length;
+                      byProfileUrl.set(target.profileUrl, target.pendingComments);
                   }
-              }
 
-              const updatedTargets = targets.map(target => {
-                  if (!byProfileUrl.has(target.profileUrl)) return target;
-                  return {
-                      ...target,
-                      pendingComments: byProfileUrl.get(target.profileUrl)
-                  };
-              });
-              await setTargets(updatedTargets);
+                  updatedTargets = updatedTargets.map(currentTarget => {
+                      if (!byProfileUrl.has(currentTarget.profileUrl)) return currentTarget;
+                      return {
+                          ...currentTarget,
+                          pendingComments: byProfileUrl.get(currentTarget.profileUrl)
+                      };
+                  });
+                  await setTargets(updatedTargets);
+              }
 
               const success = posted > 0;
               const message = success
