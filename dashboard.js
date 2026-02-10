@@ -416,7 +416,7 @@ const initDashboard = () => {
             }
             setHunterStatus(`Test de scan en cours pour: ${category}`);
             chrome.runtime.sendMessage({
-                action: "PREVIEW_FOLLOWED_SCAN",
+                action: "START_FOLLOWED_SCAN",
                 category
                 ,objectives: autoObjectives ? autoObjectives.value.trim() : ""
             }, response => {
@@ -424,7 +424,7 @@ const initDashboard = () => {
                     setHunterStatus(response && response.error ? response.error : "Test de scan échoué.", true);
                     return;
                 }
-                setHunterStatus(`Test terminé: ${response.count || 0} profils détectés.`);
+                setHunterStatus(response.message || `Test terminé: ${response.count || 0} profils détectés.`);
             });
         });
     }

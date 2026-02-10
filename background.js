@@ -469,6 +469,35 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       })();
       return true;
   }
+  if (request.action === "START_FOLLOWED_SCAN") {
+      (async () => {
+          const targets = await getTargets();
+          const category = request.category || "all";
+          const filtered = category === "all" ? targets : targets.filter(t => (t.category || "").toLowerCase() === category.toLowerCase());
+          if (!filtered.length) {
+              sendResponse({ success: false, error: "Aucun profil suivi dans cette catégorie." });
+              return;
+          }
+          const firstTarget = filtered[0];
+          const tabId = await new Promise(resolve => {
+              chrome.tabs.create({ url: firstTarget.profileUrl, active: false }, tab => resolve(tab.id));
+          });
+          const waitForTabComplete = () => new Promise(resolve => {
+              const onUpdated = (updatedTabId, info) => {
+                  if (updatedTabId === tabId && info.status === "complete") {
+                      chrome.tabs.onUpdated.removeListener(onUpdated);
+                      resolve();
+                  }
+              };
+              chrome.tabs.onUpdated.addListener(onUpdated);
+          });
+          await waitForTabComplete();
+          await chrome.scripting.executeScript({ target: { tabId }, files: CONTENT_SCRIPT_FILES });
+          chrome.tabs.remove(tabId);
+          sendResponse({ success: true, count: filtered.length, message: `Scan lancé: ${filtered.length} profils suivis.` });
+      })();
+      return true;
+  }
   if (request.action === "PUBLISH_FOLLOWED_SCAN") {
       (async () => {
           sendResponse({ success: true });
