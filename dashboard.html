@@ -140,7 +140,6 @@
     .btn-success{background:var(--success);}
     .btn-danger{background:var(--danger);}
     .btn-accent{background:var(--accent);}
-    .input-muted{font-size:11px;color:var(--muted);margin-top:4px;}
     .muted{color:var(--muted);font-size:12px;}
     .row{display:flex;gap:8px;}
     .row > *{flex:1;}
@@ -149,22 +148,35 @@
 <body>
   <div class="sidebar">
     <div class="brand">Ghostly</div>
-    <button class="nav-btn active" id="nav_radar">Radar</button>
+    <button class="nav-btn active" id="nav_radar">Auto-commentaire</button>
     <button class="nav-btn" id="nav_id">Identité</button>
     <button class="nav-btn" id="nav_com">Réponses</button>
     <button class="nav-btn" id="nav_post">Éditeur</button>
+    <button class="nav-btn" id="nav_reseau">Radar</button>
     <button class="nav-btn" id="nav_queue">Planning</button>
-    <button class="nav-btn" id="nav_reseau">RÉSEAU</button>
   </div>
   
   <div class="main">
     <div id="tab_radar" class="tab active">
-        <h3>Radar</h3>
+        <h3>Auto-commentaire</h3>
         <div class="section">
             <label for="input_scroll">Durée du scan (sec)</label>
             <input type="number" id="input_scroll" value="20">
             <button id="btn_scan_radar" class="btn-accent">Lancer Radar</button>
             <p class="muted">Analyse le fil LinkedIn et propose des réponses prêtes à publier.</p>
+        </div>
+        <div class="section">
+            <h4>Réponse sur URL</h4>
+            <p class="muted">Collez l’URL d’un post (onglet Réponses) : l’IA analysera et proposera des commentaires ciblés.</p>
+        </div>
+        <div class="section">
+            <h4>Auto commentaire du fil + Like</h4>
+            <div class="row">
+                <input id="auto_feed_frequency" placeholder="Fréquence (ex: 10 min)">
+                <input id="auto_feed_duration" placeholder="Durée (ex: 30 min)">
+            </div>
+            <input id="auto_feed_days" placeholder="Jours (ex: Lun, Mar, Mer)">
+            <button class="btn-secondary" id="btn_auto_feed_start">Démarrer</button>
         </div>
         <div id="zone_radar" class="section" style="display:none;">
             <div id="list_radar"></div>
@@ -182,10 +194,8 @@
         <div class="section">
             <label for="input_api_key">Clé OpenAI</label>
             <input id="input_api_key" type="password" placeholder="sk-..." autocomplete="off">
-            <div class="input-muted">Stockée localement dans l’extension.</div>
-            <button id="btn_save_api" class="btn-secondary">Enregistrer la clé</button>
-            <button id="btn_test_api" class="btn-accent">Tester la connexion</button>
-            <div id="api_status" class="muted"></div>
+            <p class="muted">Clé stockée localement (sync si disponible) pour activer les fonctionnalités IA.</p>
+            <button id="btn_save_api_key" class="btn-secondary">Sauver la clé</button>
         </div>
     </div>
     <div id="tab_com" class="tab">
@@ -212,6 +222,74 @@
             <button id="btn_pub_now" class="btn-danger">Publier Maintenant</button>
         </div>
     </div>
+    <div id="tab_reseau" class="tab">
+        <h3>Radar</h3>
+        <div class="section">
+            <h4>Chasse</h4>
+            <label for="hunter_keyword">Mot-clé principal</label>
+            <input id="hunter_keyword" placeholder="ex: médecin, business angel">
+            <label for="hunter_custom_query">Requête personnalisée</label>
+            <input id="hunter_custom_query" placeholder="ex: freelance marketing paris">
+            <label for="hunter_location">Lieu</label>
+            <input id="hunter_location" placeholder="ex: Paris">
+            <label for="hunter_language">Langue</label>
+            <input id="hunter_language" placeholder="ex: Français">
+            <label for="hunter_include">Mots-clés à inclure</label>
+            <input id="hunter_include" placeholder="ex: growth, B2B">
+            <label for="hunter_exclude">Mots-clés à exclure</label>
+            <input id="hunter_exclude" placeholder="ex: stagiaire">
+            <label for="hunter_max">Profils max / session</label>
+            <input id="hunter_max" type="number" min="1" max="100" value="30">
+            <label for="hunter_max_add">Ajouts max / session</label>
+            <input id="hunter_max_add" type="number" min="1" max="100" value="20">
+            <label>
+                <input type="checkbox" id="hunter_auto_connect">
+                Ajouter automatiquement les profils (connexion) après la chasse.
+            </label>
+            <label>
+                <input type="checkbox" id="hunter_consent">
+                J'ai l'autorisation de lancer la chasse automatique.
+            </label>
+            <button id="btn_hunter_start" class="btn-accent">Lancer chasse auto</button>
+            <label for="hunter_url">Importer depuis URL</label>
+            <input id="hunter_url" placeholder="https://www.linkedin.com/search/results/people/">
+            <button id="btn_hunter_import" class="btn-secondary">Importer depuis URL</button>
+            <p class="muted" id="hunter_status">Aucune chasse en cours.</p>
+        </div>
+        <div class="section">
+            <h4>Auto commentaire + Like des profils suivis</h4>
+            <div class="row">
+                <input id="auto_targets_frequency" placeholder="Fréquence (ex: 1 / jour)">
+                <input id="auto_targets_days" placeholder="Jours (ex: Lun, Jeu)">
+            </div>
+            <div class="row">
+                <input id="auto_targets_category" placeholder="Catégorie (ex: médecins)">
+                <input id="auto_targets_list" placeholder="Liste personnalisée (URLs séparées par ,)">
+            </div>
+            <button class="btn-secondary" id="btn_auto_targets_start">Démarrer</button>
+        </div>
+        <div class="section">
+            <h4>Candidates</h4>
+            <div id="hunter_candidates"></div>
+            <button id="btn_hunter_add" class="btn-success">Ajouter aux cibles</button>
+        </div>
+        <div class="section">
+            <h4>Base de données</h4>
+            <p class="muted">Liste des profils détectés par catégorie.</p>
+            <div id="hunter_categories"></div>
+            <div class="row">
+                <select id="hunter_sort">
+                    <option value="date_desc">Tri: date (récent)</option>
+                    <option value="date_asc">Tri: date (ancien)</option>
+                    <option value="alpha_asc">Tri: A → Z</option>
+                    <option value="alpha_desc">Tri: Z → A</option>
+                </select>
+                <input id="hunter_filter_letter" placeholder="Filtre lettre (ex: A)">
+            </div>
+            <div id="hunter_targets"></div>
+            <button id="btn_hunter_refresh" class="btn-secondary">Rafraîchir</button>
+        </div>
+    </div>
     <div id="tab_queue" class="tab">
         <h3>File d'attente</h3>
         <div class="section">
@@ -219,52 +297,8 @@
             <div id="list_queue"></div>
         </div>
     </div>
-    <div id="tab_reseau" class="tab">
-        <h3>RÉSEAU</h3>
-        <div class="section">
-            <h4>Chasse</h4>
-            <label for="input_search_url">URL Recherche LinkedIn</label>
-            <input id="input_search_url" placeholder="https://www.linkedin.com/search/results/people/...">
-            <button id="btn_scan_targets" class="btn-accent">Scan & Qualify</button>
-            <label for="input_profile_url">Ajouter un profil</label>
-            <input id="input_profile_url" placeholder="https://www.linkedin.com/in/...">
-            <button id="btn_add_target" class="btn-secondary">Add Target</button>
-            <div id="scan_status" class="muted"></div>
-        </div>
-        <div class="section">
-            <h4>Radar</h4>
-            <div class="row">
-                <label><input type="checkbox" id="toggle_watch"> Activer</label>
-                <label>Intervalle (min)
-                    <input type="number" id="input_interval" min="10" value="30">
-                </label>
-            </div>
-            <div class="row">
-                <label>Max cibles/cycle
-                    <input type="number" id="input_max_targets" min="1" value="5">
-                </label>
-                <label>Seuil score
-                    <input type="number" id="input_threshold" min="0" max="100" value="60">
-                </label>
-            </div>
-            <label><input type="checkbox" id="toggle_manual"> Approbation manuelle</label>
-            <button id="btn_save_watch" class="btn-secondary">Enregistrer</button>
-            <div id="targets_list"></div>
-        </div>
-        <div class="section">
-            <h4>Opportunités</h4>
-            <div id="opportunities_list"></div>
-        </div>
-        <div class="section">
-            <h4>Objectifs Stratégiques</h4>
-            <label for="input_goals">Objectifs</label>
-            <textarea id="input_goals" style="height:80px;"></textarea>
-            <label for="input_tone">Règles de ton</label>
-            <textarea id="input_tone" style="height:60px;"></textarea>
-            <button id="btn_save_objectives" class="btn-secondary">Sauvegarder</button>
-        </div>
-    </div>
   </div>
+  <script src="hunter_queries.js"></script>
   <script src="dashboard.js"></script>
 </body>
 </html>
