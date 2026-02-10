@@ -845,13 +845,14 @@ if (runtimeApi && runtimeApi.onMessage) runtimeApi.onMessage.addListener((reques
               let posted = 0;
               let attempted = 0;
               const failedProfiles = [];
-              const byProfileUrl = new Map(targets.map(target => [target.profileUrl, target.pendingComments]));
               let updatedTargets = targets;
 
               for (const target of targetsWithSuggestions) {
                   const suggestions = target.pendingComments.suggestions || [];
+                  const profileKey = target.profileUrl;
+                  let nextPendingComments = target.pendingComments;
                   console.log("[PUBLISH_FOLLOWED_SCAN] processing_target", {
-                      profileUrl: target.profileUrl,
+                      profileUrl: profileKey,
                       fullName: target.fullName || null,
                       suggestionsCount: suggestions.length
                   });
@@ -859,35 +860,43 @@ if (runtimeApi && runtimeApi.onMessage) runtimeApi.onMessage.addListener((reques
                       const publishResult = await publishSuggestionsForTarget({ tabId, target, suggestions });
                       posted += publishResult.posted || 0;
                       attempted += publishResult.attempted || 0;
-                      byProfileUrl.set(target.profileUrl, publishResult.pendingComments || target.pendingComments);
+                      nextPendingComments = publishResult.pendingComments || target.pendingComments;
                       if ((publishResult.posted || 0) === 0) {
                           failedProfiles.push(target.fullName || target.profileUrl || "Profil");
                       }
                   } catch (error) {
                       console.error("[PUBLISH_FOLLOWED_SCAN] target_failed", {
-                          profileUrl: target.profileUrl,
+                          profileUrl: profileKey,
                           errorMessage: error && error.message ? error.message : "Erreur inconnue",
                           error
                       });
                       failedProfiles.push(target.fullName || target.profileUrl || "Profil");
                       attempted += suggestions.length;
-                      byProfileUrl.set(target.profileUrl, target.pendingComments);
                   }
 
-                  updatedTargets = updatedTargets.map(currentTarget => {
-                      if (!byProfileUrl.has(currentTarget.profileUrl)) return currentTarget;
-                      return {
-                          ...currentTarget,
-                          pendingComments: byProfileUrl.get(currentTarget.profileUrl)
-                      };
-                  });
-                  await setTargets(updatedTargets);
-                  console.log("[PUBLISH_FOLLOWED_SCAN] target_persisted", {
-                      profileUrl: target.profileUrl,
-                      posted,
-                      attempted,
-                      failedProfilesCount: failedProfiles.length
-                  });
+                  try {
+                      updatedTargets = updatedTargets.map(currentTarget => {
+                          if (currentTarget.profileUrl !== profileKey) return currentTarget;
+                          return {
+                              ...currentTarget,
+                              pendingComments: nextPendingComments
+                          };
+                      });
+                      await setTargets(updatedTargets);
+                      console.log("[PUBLISH_FOLLOWED_SCAN] target_persisted", {
+                          profileUrl: profileKey,
+                          posted,
+                          attempted,
+                          failedProfilesCount: failedProfiles.length
+                      });
+                  } catch (persistError) {
+                      console.error("[PUBLISH_FOLLOWED_SCAN] target_persist_failed", {
+                          profileUrl: profileKey,
+                          errorMessage: persistError && persistError.message ? persistError.message : "Erreur inconnue",
+                          persistError
+                      });
+                      failedProfiles.push(target.fullName || target.profileUrl || "Profil");
+                  }
               }
 
               const success = posted > 0;
