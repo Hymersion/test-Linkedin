@@ -446,5 +446,16 @@ if (!window.ghostlyLoaded) {
             })();
             return true;
         }
+        if (request.action === "SCAN_PROFILE_POSTS") {
+            (async () => {
+                if (isLoginPage()) {
+                    sendResponse({ success: false, error: "Veuillez vous connecter à LinkedIn." });
+                    return;
+                }
+                const posts = collectRecentPosts(10);
+                sendResponse({ success: true, posts });
+            })();
+            return true;
+        }
     });
 }

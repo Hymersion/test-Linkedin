@@ -478,33 +478,31 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
               sendResponse({ success: false, error: "Aucun profil suivi dans cette catégorie." });
               return;
           }
-          const payload = filtered.slice(0, 10).map(t => ({
-              profileUrl: t.profileUrl,
-              fullName: t.fullName,
-              headline: t.headline,
-              lastScanAt: t.lastScanAt || null
-          }));
-          const tabId = await new Promise(resolve => {
-              chrome.tabs.create({ url: payload[0].profileUrl, active: false }, tab => resolve(tab.id));
-          });
-          const waitForTabComplete = () => new Promise(resolve => {
-              const onUpdated = (updatedTabId, info) => {
-                  if (updatedTabId === tabId && info.status === "complete") {
-                      chrome.tabs.onUpdated.removeListener(onUpdated);
-                      resolve();
-                  }
-              };
-              chrome.tabs.onUpdated.addListener(onUpdated);
-          });
-          await waitForTabComplete();
-          await chrome.scripting.executeScript({ target: { tabId }, files: CONTENT_SCRIPT_FILES });
-          const scanResult = await new Promise(resolve => {
-              chrome.tabs.sendMessage(tabId, { action: "SCAN_FOLLOWED_PROFILES", profiles: payload }, resolve);
-          });
-          chrome.tabs.remove(tabId);
-          if (!scanResult || !scanResult.success) {
-              sendResponse({ success: false, error: scanResult && scanResult.error ? scanResult.error : "Scan échoué." });
-              return;
+          const payload = filtered.slice(0, 10);
+          let totalPosts = 0;
+          for (const target of payload) {
+              const tabId = await new Promise(resolve => {
+                  chrome.tabs.create({ url: target.profileUrl, active: false }, tab => resolve(tab.id));
+              });
+              const waitForTabComplete = () => new Promise(resolve => {
+                  const onUpdated = (updatedTabId, info) => {
+                      if (updatedTabId === tabId && info.status === "complete") {
+                          chrome.tabs.onUpdated.removeListener(onUpdated);
+                          resolve();
+                      }
+                  };
+                  chrome.tabs.onUpdated.addListener(onUpdated);
+              });
+              await waitForTabComplete();
+              await chrome.scripting.executeScript({ target: { tabId }, files: CONTENT_SCRIPT_FILES });
+              const scanResult = await new Promise(resolve => {
+                  chrome.tabs.sendMessage(tabId, { action: "SCAN_PROFILE_POSTS" }, resolve);
+              });
+              chrome.tabs.remove(tabId);
+              if (scanResult && scanResult.success && Array.isArray(scanResult.posts)) {
+                  totalPosts += scanResult.posts.length;
+              }
+              await new Promise(r => setTimeout(r, 1500));
           }
           const now = Date.now();
           const updatedTargets = targets.map(t => {
@@ -514,7 +512,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
               return t;
           });
           await setTargets(updatedTargets);
-          sendResponse({ success: true, count: payload.length, message: `Scan lancé: ${payload.length} profils suivis.` });
+          sendResponse({ success: true, count: payload.length, message: `Scan terminé: ${payload.length} profils, ${totalPosts} posts détectés.` });
       })();
       return true;
   }
