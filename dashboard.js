@@ -1,4 +1,24 @@
+let dashboardInitialized = false;
+
+const bindFallbackNavigation = () => {
+    const map = { 'nav_id': 'tab_id', 'nav_com': 'tab_com', 'nav_radar': 'tab_radar', 'nav_post': 'tab_post', 'nav_reseau': 'tab_reseau', 'nav_queue': 'tab_queue' };
+    Object.keys(map).forEach(navId => {
+        const el = document.getElementById(navId);
+        if (!el || el.dataset.fallbackBound === "1") return;
+        el.dataset.fallbackBound = "1";
+        el.addEventListener('click', () => {
+            document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            el.classList.add('active');
+            const targetTab = document.getElementById(map[navId]);
+            if (targetTab) targetTab.classList.add('active');
+        });
+    });
+};
+
 const initDashboard = () => {
+    if (dashboardInitialized) return;
+    dashboardInitialized = true;
 
     const map = { 'nav_id': 'tab_id', 'nav_com': 'tab_com', 'nav_radar': 'tab_radar', 'nav_post': 'tab_post', 'nav_reseau': 'tab_reseau', 'nav_queue': 'tab_queue' };
     const API_KEY_STORAGE_KEY = "openaiApiKey";
@@ -44,6 +64,32 @@ const initDashboard = () => {
     const hunterCategories = document.getElementById('hunter_categories');
     const hunterSort = document.getElementById('hunter_sort');
     const hunterFilterLetter = document.getElementById('hunter_filter_letter');
+    const autoTargetsCategorySelect = document.getElementById('auto_targets_category_select');
+    const autoScheduleDaily = document.getElementById('auto_schedule_daily');
+    const autoScheduleWeekly = document.getElementById('auto_schedule_weekly');
+    const autoTargetsStart = document.getElementById('btn_auto_targets_start');
+    const autoFollowedPreview = document.getElementById('btn_auto_followed_preview');
+    const autoFollowedPublish = document.getElementById('btn_auto_followed_publish');
+    const autoCommentPreview = document.getElementById('auto_comment_preview');
+    const autoCommentVerifyBtn = document.getElementById('btn_auto_comment_verify');
+    const autoCommentPublishBtn = document.getElementById('btn_auto_comment_publish');
+    const autoObjectives = document.getElementById('auto_objectives');
+    const autoTestLimit = document.getElementById('auto_test_limit');
+    const autoScheduleTimeButtons = document.querySelectorAll('[data-time]');
+    const autoScheduleDayButtons = document.querySelectorAll('[data-day]');
+    const autoScheduleEvery = document.getElementById('auto_schedule_every');
+    const autoScheduleTimeSelect = document.getElementById('auto_schedule_time_select');
+    const autoTabFeed = document.getElementById('auto_tab_feed');
+    const autoTabFollowed = document.getElementById('auto_tab_followed');
+    const radarTabSettings = document.getElementById('radar_tab_settings');
+    const radarTabTargets = document.getElementById('radar_tab_targets');
+    const autoSectionQuick = document.getElementById('auto_section_quick');
+    const autoSectionFeed = document.getElementById('auto_section_feed');
+    const autoSectionFollowed = document.getElementById('auto_section_followed');
+    const autoSectionVerify = document.getElementById('auto_section_verify');
+    const radarSectionHunt = document.getElementById('radar_section_hunt');
+    const radarSectionDb = document.getElementById('radar_section_db');
+    const radarSectionCandidates = document.getElementById('radar_section_candidates');
     let FOUND_COMS = [];
     let RADAR_OPPS = [];
     let HUNTER_LAST_CANDIDATES = [];
@@ -191,6 +237,20 @@ const initDashboard = () => {
     const renderTargets = (targets) => {
         if (!hunterTargets) return;
         hunterTargets.innerHTML = "";
+        if (autoTargetsCategorySelect) {
+            const categories = Array.from(new Set((targets || []).map(t => t.category || "Sans catégorie"))).sort();
+            autoTargetsCategorySelect.innerHTML = "";
+            const allOption = document.createElement('option');
+            allOption.value = "all";
+            allOption.textContent = "Toutes les catégories";
+            autoTargetsCategorySelect.appendChild(allOption);
+            categories.forEach(cat => {
+                const opt = document.createElement('option');
+                opt.value = cat;
+                opt.textContent = cat;
+                autoTargetsCategorySelect.appendChild(opt);
+            });
+        }
         const grouped = (targets || []).reduce((acc, t) => {
             const key = t.category || "Sans catégorie";
             if (!acc[key]) acc[key] = [];
@@ -227,6 +287,7 @@ const initDashboard = () => {
                         </div>
                         <div>
                             <button class="btn-secondary" data-connect="${t.profileUrl}">🔗</button>
+                            <button class="btn-secondary" data-hook="${t.profileUrl}">✉️</button>
                         </div>
                     </div>
                 `;
@@ -250,6 +311,62 @@ const initDashboard = () => {
                 });
             });
         });
+        hunterTargets.querySelectorAll('[data-hook]').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const url = e.currentTarget.dataset.hook;
+                if (!url) return;
+                if (!chromeAvailable) {
+                    setHunterStatus("Fonctionnalité indisponible hors extension.", true);
+                    return;
+                }
+                chrome.runtime.sendMessage({ action: "GENERATE_HOOK_MESSAGE", profileUrl: url }, response => {
+                    if (!response || !response.success) {
+                        setHunterStatus(response && response.error ? response.error : "Génération échouée.", true);
+                        return;
+                    }
+                    setHunterStatus(`Message d'accroche: ${response.message}`);
+                });
+            });
+        });
+
+        if (autoCommentPreview) {
+            autoCommentPreview.innerHTML = "";
+            const pending = [];
+            (targets || []).forEach(t => {
+                const suggestions = t && t.pendingComments && Array.isArray(t.pendingComments.suggestions)
+                    ? t.pendingComments.suggestions
+                    : [];
+                suggestions.forEach((s, idx) => {
+                    pending.push({
+                        profileUrl: t.profileUrl,
+                        fullName: t.fullName || "Profil",
+                        suggestion: s,
+                        key: `${t.profileUrl || 'profile'}-${idx}`
+                    });
+                });
+            });
+            if (!pending.length) {
+                autoCommentPreview.innerHTML = '<p class="muted">Aucune proposition de commentaire pour le moment.</p>';
+            } else {
+                pending.slice(0, 30).forEach((item, idx) => {
+                    const row = document.createElement('div');
+                    row.className = 'card';
+                    row.innerHTML = `
+                        <div style="display:flex;justify-content:space-between;gap:8px;">
+                            <div>
+                                <b>${item.fullName}</b><br>
+                                <span class="muted">${(item.suggestion.postText || '').substring(0, 120)}...</span><br>
+                                <textarea id="pending-comment-${idx}" style="width:100%;margin-top:6px;">${item.suggestion.comment || ''}</textarea>
+                            </div>
+                            <div>
+                                <input type="checkbox" id="pending-check-${idx}" checked>
+                            </div>
+                        </div>
+                    `;
+                    autoCommentPreview.appendChild(row);
+                });
+            }
+        }
     };
 
     const loadTargets = () => {
@@ -258,6 +375,206 @@ const initDashboard = () => {
             renderTargets(r.targets || []);
         });
     };
+
+    if (chromeAvailable && autoObjectives) {
+        chrome.storage.local.get(['autoObjectives'], r => {
+            autoObjectives.value = r.autoObjectives || "";
+        });
+        autoObjectives.addEventListener('blur', () => {
+            chrome.storage.local.set({ autoObjectives: autoObjectives.value.trim() });
+        });
+    }
+
+    const setActiveButton = (buttons, activeValue, attr) => {
+        buttons.forEach(btn => {
+            const isActive = btn.getAttribute(attr) === activeValue;
+            btn.classList.toggle('btn-accent', isActive);
+            btn.classList.toggle('btn-secondary', !isActive);
+        });
+    };
+
+    const toggleButton = (btn, active) => {
+        btn.classList.toggle('btn-accent', active);
+        btn.classList.toggle('btn-secondary', !active);
+    };
+
+    const scheduleState = {
+        frequency: 'daily',
+        time: '10:00',
+        days: new Set(),
+        everyDays: '1'
+    };
+
+    if (autoScheduleDaily && autoScheduleWeekly) {
+        autoScheduleDaily.addEventListener('click', () => {
+            scheduleState.frequency = 'daily';
+            toggleButton(autoScheduleDaily, true);
+            toggleButton(autoScheduleWeekly, false);
+        });
+        autoScheduleWeekly.addEventListener('click', () => {
+            scheduleState.frequency = 'weekly';
+            toggleButton(autoScheduleWeekly, true);
+            toggleButton(autoScheduleDaily, false);
+        });
+        toggleButton(autoScheduleDaily, true);
+        toggleButton(autoScheduleWeekly, false);
+    }
+
+    if (autoScheduleTimeButtons.length) {
+        autoScheduleTimeButtons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                scheduleState.time = btn.getAttribute('data-time');
+                if (autoScheduleTimeSelect) autoScheduleTimeSelect.value = scheduleState.time;
+                setActiveButton(autoScheduleTimeButtons, scheduleState.time, 'data-time');
+            });
+        });
+        setActiveButton(autoScheduleTimeButtons, scheduleState.time, 'data-time');
+    }
+
+    if (autoScheduleTimeSelect) {
+        autoScheduleTimeSelect.value = scheduleState.time;
+        autoScheduleTimeSelect.addEventListener('change', () => {
+            scheduleState.time = autoScheduleTimeSelect.value;
+            setActiveButton(autoScheduleTimeButtons, scheduleState.time, 'data-time');
+        });
+    }
+
+    if (autoScheduleEvery) {
+        autoScheduleEvery.value = scheduleState.everyDays;
+        autoScheduleEvery.addEventListener('change', () => {
+            scheduleState.everyDays = autoScheduleEvery.value;
+        });
+    }
+
+    if (autoScheduleDayButtons.length) {
+        autoScheduleDayButtons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                const day = btn.getAttribute('data-day');
+                if (scheduleState.days.has(day)) {
+                    scheduleState.days.delete(day);
+                    toggleButton(btn, false);
+                } else {
+                    scheduleState.days.add(day);
+                    toggleButton(btn, true);
+                }
+            });
+        });
+    }
+
+    if (autoTargetsStart) {
+        autoTargetsStart.addEventListener('click', () => {
+            const category = autoTargetsCategorySelect ? autoTargetsCategorySelect.value : 'all';
+            const days = Array.from(scheduleState.days).join(', ') || 'tous';
+            const cadence = `tous les ${scheduleState.everyDays} jours à ${scheduleState.time}`;
+            setHunterStatus(`Planification: ${category} • ${cadence} • ${scheduleState.frequency} • ${days}`);
+        });
+    }
+
+    if (autoFollowedPreview) {
+        autoFollowedPreview.addEventListener('click', () => {
+            const category = autoTargetsCategorySelect ? autoTargetsCategorySelect.value : 'all';
+            const testLimit = autoTestLimit ? Number(autoTestLimit.value) : 2;
+            if (!chromeAvailable) {
+                setHunterStatus("Fonctionnalité indisponible hors extension.", true);
+                return;
+            }
+            setHunterStatus(`Test de scan en cours pour: ${category}`);
+            chrome.runtime.sendMessage({
+                action: "START_FOLLOWED_SCAN",
+                category,
+                objectives: autoObjectives ? autoObjectives.value.trim() : "",
+                testLimit
+            }, response => {
+                if (!response || !response.success) {
+                    setHunterStatus(response && response.error ? response.error : "Test de scan échoué.", true);
+                    return;
+                }
+                setHunterStatus(response.message || `Test terminé: ${response.count || 0} profils détectés.`);
+            });
+        });
+    }
+
+    if (autoFollowedPublish) {
+        autoFollowedPublish.addEventListener('click', () => {
+            const category = autoTargetsCategorySelect ? autoTargetsCategorySelect.value : 'all';
+            if (!chromeAvailable) {
+                setHunterStatus("Fonctionnalité indisponible hors extension.", true);
+                return;
+            }
+            setHunterStatus(`Publication des commentaires sélectionnés pour: ${category}`);
+            chrome.runtime.sendMessage({
+                action: "PUBLISH_FOLLOWED_SCAN",
+                category,
+                objectives: autoObjectives ? autoObjectives.value.trim() : ""
+            }, response => {
+                if (!response || !response.success) {
+                    setHunterStatus(response && response.error ? response.error : "Publication échouée.", true);
+                    return;
+                }
+                setHunterStatus("Publication terminée.");
+            });
+        });
+    }
+
+    if (autoCommentVerifyBtn) {
+        autoCommentVerifyBtn.addEventListener('click', () => {
+            loadTargets();
+            setHunterStatus("Propositions rechargées depuis les profils suivis.");
+        });
+    }
+
+    if (autoCommentPublishBtn) {
+        autoCommentPublishBtn.addEventListener('click', () => {
+            setHunterStatus("Publication manuelle: sélectionnez les commentaires à publier dans la liste puis lancez la publication des suivis.");
+        });
+    }
+
+    const setDisplay = (el, visible) => {
+        if (!el) return;
+        el.style.display = visible ? 'block' : 'none';
+    };
+
+    const setActiveTabButtons = (activeBtn, otherBtn) => {
+        if (!activeBtn || !otherBtn) return;
+        activeBtn.classList.add('btn-accent');
+        activeBtn.classList.remove('btn-secondary');
+        otherBtn.classList.add('btn-secondary');
+        otherBtn.classList.remove('btn-accent');
+    };
+
+    if (autoTabFeed && autoTabFollowed) {
+        autoTabFeed.addEventListener('click', () => {
+            setActiveTabButtons(autoTabFeed, autoTabFollowed);
+            setDisplay(autoSectionQuick, true);
+            setDisplay(autoSectionFeed, true);
+            setDisplay(autoSectionFollowed, false);
+            setDisplay(autoSectionVerify, false);
+        });
+        autoTabFollowed.addEventListener('click', () => {
+            setActiveTabButtons(autoTabFollowed, autoTabFeed);
+            setDisplay(autoSectionQuick, false);
+            setDisplay(autoSectionFeed, false);
+            setDisplay(autoSectionFollowed, true);
+            setDisplay(autoSectionVerify, true);
+        });
+        autoTabFeed.click();
+    }
+
+    if (radarTabSettings && radarTabTargets) {
+        radarTabSettings.addEventListener('click', () => {
+            setActiveTabButtons(radarTabSettings, radarTabTargets);
+            setDisplay(radarSectionHunt, true);
+            setDisplay(radarSectionDb, false);
+            setDisplay(radarSectionCandidates, false);
+        });
+        radarTabTargets.addEventListener('click', () => {
+            setActiveTabButtons(radarTabTargets, radarTabSettings);
+            setDisplay(radarSectionHunt, false);
+            setDisplay(radarSectionDb, true);
+            setDisplay(radarSectionCandidates, true);
+        });
+        radarTabSettings.click();
+    }
 
     loadHunterSettings();
     loadTargets();
@@ -615,8 +932,17 @@ const initDashboard = () => {
     }
 };
 
+const safeInitDashboard = () => {
+    try {
+        initDashboard();
+    } catch (error) {
+        console.error("Dashboard init failed:", error);
+        bindFallbackNavigation();
+    }
+};
+
 if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initDashboard);
+    document.addEventListener('DOMContentLoaded', safeInitDashboard);
 } else {
-    initDashboard();
+    safeInitDashboard();
 }
