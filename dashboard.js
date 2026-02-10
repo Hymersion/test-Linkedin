@@ -419,8 +419,8 @@ const initDashboard = () => {
             setHunterStatus(`Test de scan en cours pour: ${category}`);
             chrome.runtime.sendMessage({
                 action: "START_FOLLOWED_SCAN",
-                category
-                ,objectives: autoObjectives ? autoObjectives.value.trim() : "",
+                category,
+                objectives: autoObjectives ? autoObjectives.value.trim() : "",
                 testLimit
             }, response => {
                 if (!response || !response.success) {
