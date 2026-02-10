@@ -400,7 +400,7 @@ const connectToProfile = async (profileUrl, message) => {
         await new Promise(r => setTimeout(r, 1800));
 
         let lastError = "Connexion non exécutée.";
-        for (let attempt = 1; attempt <= 4; attempt++) {
+        for (let attempt = 1; attempt <= 2; attempt++) {
             await chrome.scripting.executeScript({ target: { tabId }, files: CONTENT_SCRIPT_FILES });
             const attemptResult = await new Promise(resolve => {
                 chrome.tabs.sendMessage(tabId, {
@@ -426,6 +426,15 @@ const connectToProfile = async (profileUrl, message) => {
             lastError = attemptResult && attemptResult.error
                 ? attemptResult.error
                 : `Connexion échouée (tentative ${attempt}).`;
+
+            const lowerError = String(lastError || "").toLowerCase();
+            if (lowerError.includes("linkedin a refusé l'invitation") ||
+                lowerError.includes('impossible de connecter') ||
+                lowerError.includes('invitation non confirmée') ||
+                lowerError.includes('bouton de connexion introuvable')) {
+                break;
+            }
+
             await new Promise(r => setTimeout(r, 1600));
         }
 

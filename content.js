@@ -703,48 +703,65 @@ if (!window.ghostlyLoaded) {
                     return;
                 }
 
-                let clicked = false;
-                for (let attempt = 0; attempt < 2 && !clicked; attempt++) {
-                    const directConnectBtn = findConnectButton();
-                    if (directConnectBtn) {
-                        clicked = robustClick(directConnectBtn);
+                const attemptConnection = async (customMessage) => {
+                    if (hasPendingOrConnectedState()) {
+                        return { success: true, alreadyConnected: true };
                     }
-                    if (!clicked) {
-                        clicked = await clickConnectFromOverflow();
-                    }
-                    if (!clicked && attempt === 0) {
-                        window.scrollBy(0, -300);
-                        await new Promise(r => setTimeout(r, 800));
-                    }
-                }
 
-                if (!clicked) {
-                    sendResponse({ success: false, error: "Bouton de connexion introuvable." });
-                    return;
-                }
-
-                const modalResult = await completeInviteModal(request.message || "");
-                if (!modalResult.success && request.message) {
-                    const retryWithoutNote = await completeInviteModal("");
-                    if (retryWithoutNote.success) {
-                        const retryConfirmed = await waitForPendingOrConnectedState(20, 900);
-                        if (retryConfirmed) {
-                            sendResponse({ success: true, fallbackWithoutNote: true });
-                            return;
+                    let clicked = false;
+                    for (let attempt = 0; attempt < 2 && !clicked; attempt++) {
+                        const directConnectBtn = findConnectButton();
+                        if (directConnectBtn) {
+                            clicked = robustClick(directConnectBtn);
+                        }
+                        if (!clicked) {
+                            clicked = await clickConnectFromOverflow();
+                        }
+                        if (!clicked && attempt === 0) {
+                            window.scrollBy(0, -300);
+                            await new Promise(r => setTimeout(r, 800));
                         }
                     }
-                }
-                if (!modalResult.success) {
-                    sendResponse(modalResult);
+
+                    if (!clicked) {
+                        return { success: false, error: "Bouton de connexion introuvable." };
+                    }
+
+                    const modalResult = await completeInviteModal(customMessage || "");
+                    if (!modalResult.success) {
+                        return modalResult;
+                    }
+
+                    const confirmed = await waitForPendingOrConnectedState(20, 900);
+                    if (!confirmed) {
+                        return { success: false, error: "Invitation non confirmée (état LinkedIn inchangé)." };
+                    }
+
+                    return { success: true };
+                };
+
+                const firstAttempt = await attemptConnection(request.message || "");
+                if (firstAttempt.success) {
+                    sendResponse(firstAttempt);
                     return;
                 }
 
-                const confirmed = await waitForPendingOrConnectedState(20, 900);
-                if (!confirmed) {
-                    sendResponse({ success: false, error: "Invitation non confirmée (état LinkedIn inchangé)." });
+                if (request.message) {
+                    await new Promise(r => setTimeout(r, 1600));
+                    const secondAttempt = await attemptConnection("");
+                    if (secondAttempt.success) {
+                        sendResponse({ success: true, fallbackWithoutNote: true, firstError: firstAttempt.error || "" });
+                        return;
+                    }
+                    sendResponse({
+                        success: false,
+                        error: secondAttempt.error || firstAttempt.error || "Connexion non exécutée.",
+                        firstError: firstAttempt.error || ""
+                    });
                     return;
                 }
-                sendResponse({ success: true });
+
+                sendResponse(firstAttempt);
             })();
             return true;
         }
