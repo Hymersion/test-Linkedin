@@ -206,6 +206,27 @@
       margin-top:8px;
     }
 
+
+    .hook-bubble{
+      position:fixed;
+      right:18px;
+      bottom:18px;
+      width:320px;
+      max-width:calc(100% - 36px);
+      background:#ffffff;
+      border:1px solid #dbeafe;
+      box-shadow:var(--shadow);
+      border-radius:12px;
+      padding:10px;
+      z-index:9999;
+      display:none;
+    }
+    .hook-bubble.active{display:block;}
+    .hook-bubble-title{font-size:12px;font-weight:700;margin-bottom:6px;color:#1e3a8a;}
+    .hook-bubble textarea{height:96px;resize:vertical;margin:0;}
+    .hook-bubble-actions{display:flex;gap:8px;margin-top:8px;}
+    .hook-bubble-actions button{margin:0;padding:8px 10px;font-size:12px;}
+
   </style>
 </head>
 <body>
@@ -444,6 +465,16 @@
         </div>
     </div>
   </div>
+
+  <div id="hook_bubble" class="hook-bubble" role="dialog" aria-live="polite">
+    <div class="hook-bubble-title">Message personnalisé généré</div>
+    <textarea id="hook_bubble_text" readonly></textarea>
+    <div class="hook-bubble-actions">
+      <button id="hook_bubble_copy" class="btn-secondary" type="button">Copier</button>
+      <button id="hook_bubble_close" class="btn-secondary" type="button">Fermer</button>
+    </div>
+  </div>
+
   <script src="hunter_queries.js"></script>
   <script src="dashboard.js"></script>
 </body>

@@ -90,6 +90,22 @@ if (!window.ghostlyLoaded) {
         return true;
     };
 
+
+    const hasPendingOrConnectedState = () => {
+        const scope = document.querySelector('main') || document;
+        const buttons = Array.from(scope.querySelectorAll('button'));
+        return buttons.some(btn => {
+            const label = getElementLabel(btn);
+            return label.includes('en attente') ||
+                label.includes('pending') ||
+                label.includes('message') ||
+                label.includes('messagerie') ||
+                label.includes('suivi') ||
+                label.includes('following') ||
+                label.includes('relation');
+        });
+    };
+
     const completeInviteModal = async (customMessage) => {
         await new Promise(r => setTimeout(r, 700));
         const modal = document.querySelector('[role="dialog"], .artdeco-modal');
@@ -114,13 +130,15 @@ if (!window.ghostlyLoaded) {
         const sendClickable = sendButton ? (sendButton.closest('button') || sendButton) : null;
         if (sendClickable) {
             forceClick(sendClickable);
+            await new Promise(r => setTimeout(r, 900));
             return { success: true };
         }
 
-        const noNoteButton = findByText('button', ['sans note', 'without a note']) || findByText('span', ['sans note', 'without a note']);
+        const noNoteButton = findByText('button', ['sans note', 'without a note'], modal) || findByText('span', ['sans note', 'without a note'], modal);
         const noNoteClickable = noNoteButton ? (noNoteButton.closest('button') || noNoteButton) : null;
         if (noNoteClickable) {
             forceClick(noNoteClickable);
+            await new Promise(r => setTimeout(r, 900));
             return { success: true };
         }
 
@@ -615,6 +633,12 @@ if (!window.ghostlyLoaded) {
                 const modalResult = await completeInviteModal(request.message || "");
                 if (!modalResult.success) {
                     sendResponse(modalResult);
+                    return;
+                }
+
+                await new Promise(r => setTimeout(r, 1200));
+                if (!hasPendingOrConnectedState()) {
+                    sendResponse({ success: false, error: "Invitation non confirmée (état LinkedIn inchangé)." });
                     return;
                 }
                 sendResponse({ success: true });

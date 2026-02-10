@@ -57,6 +57,10 @@ const initDashboard = () => {
     const hunterConsent = document.getElementById('hunter_consent');
     const hunterStatus = document.getElementById('hunter_status');
     const hunterCandidates = document.getElementById('hunter_candidates');
+    const hookBubble = document.getElementById('hook_bubble');
+    const hookBubbleText = document.getElementById('hook_bubble_text');
+    const hookBubbleCopy = document.getElementById('hook_bubble_copy');
+    const hookBubbleClose = document.getElementById('hook_bubble_close');
     const hunterUrl = document.getElementById('hunter_url');
     const hunterAddBtn = document.getElementById('btn_hunter_add');
     const hunterTargets = document.getElementById('hunter_targets');
@@ -94,6 +98,38 @@ const initDashboard = () => {
     let FOUND_COMS = [];
     let RADAR_OPPS = [];
     let HUNTER_LAST_CANDIDATES = [];
+
+
+    const showHookBubble = (message) => {
+        if (!hookBubble || !hookBubbleText) {
+            setHunterStatus(`Message d'accroche: ${message}`);
+            return;
+        }
+        hookBubbleText.value = message || "";
+        hookBubble.classList.add('active');
+    };
+
+    const hideHookBubble = () => {
+        if (!hookBubble) return;
+        hookBubble.classList.remove('active');
+    };
+
+    if (hookBubbleClose) {
+        hookBubbleClose.addEventListener('click', hideHookBubble);
+    }
+
+    if (hookBubbleCopy) {
+        hookBubbleCopy.addEventListener('click', async () => {
+            const message = hookBubbleText ? hookBubbleText.value : "";
+            if (!message) return;
+            try {
+                await navigator.clipboard.writeText(message);
+                setHunterStatus("Message copié dans le presse-papier.");
+            } catch (error) {
+                setHunterStatus("Copie impossible automatiquement. Sélectionnez puis copiez manuellement.", true);
+            }
+        });
+    }
 
     const chromeAvailable = typeof chrome !== "undefined" && chrome.storage && chrome.runtime;
 
@@ -355,7 +391,8 @@ const initDashboard = () => {
                         setHunterStatus(response && response.error ? response.error : "Génération échouée.", true);
                         return;
                     }
-                    setHunterStatus(`Message d'accroche: ${response.message}`);
+                    showHookBubble(response.message);
+                    setHunterStatus("Message personnalisé généré.");
                 });
             });
         });
