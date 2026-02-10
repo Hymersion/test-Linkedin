@@ -399,39 +399,72 @@ const initDashboard = () => {
 
         if (autoCommentPreview) {
             autoCommentPreview.innerHTML = "";
-            const pending = [];
-            (targets || []).forEach(t => {
-                const suggestions = t && t.pendingComments && Array.isArray(t.pendingComments.suggestions)
-                    ? t.pendingComments.suggestions
-                    : [];
-                suggestions.forEach((s, idx) => {
-                    pending.push({
-                        profileUrl: t.profileUrl,
-                        fullName: t.fullName || "Profil",
-                        suggestion: s,
-                        key: `${t.profileUrl || 'profile'}-${idx}`
-                    });
-                });
-            });
-            if (!pending.length) {
+            const grouped = (targets || []).filter(t => t && t.pendingComments).map(t => {
+                const suggestions = Array.isArray(t.pendingComments.suggestions) ? t.pendingComments.suggestions : [];
+                const analyses = Array.isArray(t.pendingComments.analyses) ? t.pendingComments.analyses : [];
+                return {
+                    target: t,
+                    suggestions,
+                    analyses,
+                    actionableSuggestions: suggestions.filter(s => (s.status || 'draft') !== 'published')
+                };
+            }).filter(g => g.suggestions.length || g.analyses.length);
+
+            if (!grouped.length) {
                 autoCommentPreview.innerHTML = '<p class="muted">Aucune proposition de commentaire pour le moment.</p>';
             } else {
-                pending.slice(0, 30).forEach((item, idx) => {
-                    const row = document.createElement('div');
-                    row.className = 'card';
-                    row.innerHTML = `
-                        <div style="display:flex;justify-content:space-between;gap:8px;">
+                let globalIdx = 0;
+                grouped.forEach(group => {
+                    const block = document.createElement('div');
+                    block.className = 'card';
+                    block.style.borderLeft = '4px solid #2563eb';
+                    const rejected = group.analyses.filter(a => !a.pertinent);
+                    block.innerHTML = `
+                        <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;">
                             <div>
-                                <b>${item.fullName}</b><br>
-                                <span class="muted">${(item.suggestion.postText || '').substring(0, 120)}...</span><br>
-                                <textarea id="pending-comment-${idx}" style="width:100%;margin-top:6px;">${item.suggestion.comment || ''}</textarea>
-                            </div>
-                            <div>
-                                <input type="checkbox" id="pending-check-${idx}" checked>
+                                <b>${group.target.fullName || 'Profil'}</b><br>
+                                <span class="muted">${group.target.headline || ''}</span><br>
+                                <span class="muted">Commentaires proposés: ${group.suggestions.length} | Posts non pertinents: ${rejected.length}</span>
                             </div>
                         </div>
                     `;
-                    autoCommentPreview.appendChild(row);
+
+                    group.suggestions.forEach(suggestion => {
+                        const row = document.createElement('div');
+                        row.className = 'panel';
+                        row.style.marginTop = '8px';
+                        row.innerHTML = `
+                            <div style="display:flex;justify-content:space-between;gap:8px;">
+                                <div style="flex:1;">
+                                    <span class="muted">Post: ${(suggestion.postText || '').substring(0, 180)}...</span><br>
+                                    <span class="muted">Pourquoi proposé: ${suggestion.reason || 'Pertinence détectée'}</span><br>
+                                    <textarea id="pending-comment-${globalIdx}" style="width:100%;margin-top:6px;">${suggestion.comment || ''}</textarea>
+                                </div>
+                                <div>
+                                    <input type="checkbox" id="pending-check-${globalIdx}" ${((suggestion.status || 'draft') !== 'published') ? 'checked' : ''} ${((suggestion.status || 'draft') === 'published') ? 'disabled' : ''}>
+                                </div>
+                            </div>
+                        `;
+                        block.appendChild(row);
+                        globalIdx += 1;
+                    });
+
+                    if (rejected.length) {
+                        const rej = document.createElement('div');
+                        rej.className = 'panel';
+                        rej.style.marginTop = '8px';
+                        rej.innerHTML = `<b>Posts non retenus (explication)</b>`;
+                        rejected.slice(0, 6).forEach(item => {
+                            const line = document.createElement('p');
+                            line.className = 'muted';
+                            line.style.margin = '6px 0 0';
+                            line.textContent = `• ${(item.postText || '').substring(0, 110)}... → ${item.reason || 'Non pertinent pour vos objectifs.'}`;
+                            rej.appendChild(line);
+                        });
+                        block.appendChild(rej);
+                    }
+
+                    autoCommentPreview.appendChild(block);
                 });
             }
         }

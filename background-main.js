@@ -39,6 +39,16 @@ const getApiKey = () => new Promise(resolve => {
     });
 });
 
+const getPersona = () => new Promise(resolve => {
+    if (!storageLocalApi) {
+        resolve("Expert LinkedIn pragmatique");
+        return;
+    }
+    storageLocalApi.get(['persona'], r => {
+        resolve((r && r.persona ? String(r.persona) : "Expert LinkedIn pragmatique").trim());
+    });
+});
+
 const getQueue = () => new Promise(resolve => {
     if (!storageLocalApi) {
         resolve([]);
@@ -223,18 +233,30 @@ const buildFallbackComment = (postText, objectiveText) => {
 
 const generateCommentSuggestions = async (target, posts, objectives) => {
     const apiKey = await getApiKey();
+    const persona = await getPersona();
     const candidatePosts = Array.isArray(posts) ? posts.filter(p => p && p.text).slice(0, 10) : [];
-    if (!candidatePosts.length) return [];
+    if (!candidatePosts.length) return { suggestions: [], analyses: [] };
 
     if (!apiKey) {
-        return candidatePosts.slice(0, 3).map((post, idx) => ({
+        const suggestions = candidatePosts.slice(0, 3).map((post, idx) => ({
             id: `${target.profileUrl || 'profile'}-${Date.now()}-${idx}`,
             urn: post.urn || "",
             postText: post.text,
             comment: buildFallbackComment(post.text, objectives),
+            reason: "Fallback sans IA: commentaire basé sur le contenu du post.",
             source: "fallback",
             status: "draft"
         }));
+        const analyses = candidatePosts.map((post, idx) => ({
+            postIndex: idx + 1,
+            urn: post.urn || "",
+            postText: post.text,
+            pertinent: idx < 3,
+            reason: idx < 3
+                ? "Post jugé pertinent en fallback."
+                : "Post non traité faute d'IA (limite fallback à 3 commentaires)."
+        }));
+        return { suggestions, analyses };
     }
 
     const promptPosts = candidatePosts.map((post, index) => `${index + 1}. ${post.text}`).join("\n\n");
@@ -242,29 +264,70 @@ const generateCommentSuggestions = async (target, posts, objectives) => {
         model: "gpt-4o",
         messages: [{
             role: "user",
-            content: `Objectifs client: ${objectives || "non précisés"}\nProfil ciblé: ${target.fullName || "Profil LinkedIn"} | ${target.headline || ""}\n\nPosts récents:\n${promptPosts}\n\nPour chaque post vraiment pertinent, propose un commentaire opportunité (1-2 phrases max). Réponds en JSON strict: {"suggestions":[{"index":1,"comment":"...","reason":"..."}]}`
+            content: `Tu es un assistant LinkedIn expert.
+Persona client: ${persona || "non précisée"}
+Objectifs client: ${objectives || "non précisés"}
+Personne suivie: ${target.fullName || "Profil LinkedIn"}
+Description suivi: ${target.headline || ""}
+
+Posts récents:
+${promptPosts}
+
+Tâche:
+1) Évalue chaque post (pertinent ou non pour commenter au nom du client) avec une raison claire.
+2) Propose des commentaires uniquement pour les posts pertinents.
+3) Les commentaires doivent être spécifiques au post, actionnables, et refléter la personnalité du client.
+4) Évite toute phrase générique, vague ou hors-sujet.
+
+Réponse JSON strict:
+{
+  "analyses":[{"index":1,"pertinent":true,"reason":"..."}],
+  "suggestions":[{"index":1,"comment":"...","reason":"..."}]
+}`
         }],
-        temperature: 0.4
+        temperature: 0.35
     });
 
     if (!ok) {
-        return [{
-            id: `${target.profileUrl || 'profile'}-${Date.now()}-error`,
-            urn: "",
-            postText: "",
-            comment: "",
-            reason: error || "Erreur IA",
-            source: "ai_error",
-            status: "error"
-        }];
+        return {
+            suggestions: [{
+                id: `${target.profileUrl || 'profile'}-${Date.now()}-error`,
+                urn: "",
+                postText: "",
+                comment: "",
+                reason: error || "Erreur IA",
+                source: "ai_error",
+                status: "error"
+            }],
+            analyses: candidatePosts.map((post, idx) => ({
+                postIndex: idx + 1,
+                urn: post.urn || "",
+                postText: post.text,
+                pertinent: false,
+                reason: error || "Évaluation impossible (erreur IA)."
+            }))
+        };
     }
 
     const content = data && data.choices && data.choices[0] && data.choices[0].message
         ? data.choices[0].message.content
         : "";
     const parsed = parseJsonSafe(content) || {};
-    const suggestions = Array.isArray(parsed.suggestions) ? parsed.suggestions : [];
-    return suggestions
+    const analysesRaw = Array.isArray(parsed.analyses) ? parsed.analyses : [];
+    const suggestionsRaw = Array.isArray(parsed.suggestions) ? parsed.suggestions : [];
+
+    const analyses = candidatePosts.map((post, idx) => {
+        const analysis = analysesRaw.find(a => Number(a && a.index) === idx + 1) || {};
+        return {
+            postIndex: idx + 1,
+            urn: post.urn || "",
+            postText: post.text,
+            pertinent: Boolean(analysis.pertinent),
+            reason: String(analysis.reason || (analysis.pertinent ? "Post pertinent." : "Post non pertinent.")).trim()
+        };
+    });
+
+    const suggestions = suggestionsRaw
         .map((s, idx) => {
             const postIndex = Number(s.index) - 1;
             const linkedPost = candidatePosts[postIndex];
@@ -274,29 +337,38 @@ const generateCommentSuggestions = async (target, posts, objectives) => {
                 urn: linkedPost.urn || "",
                 postText: linkedPost.text,
                 comment: String(s.comment).trim(),
-                reason: String(s.reason || "").trim(),
+                reason: String(s.reason || "Commentaire généré car post jugé pertinent.").trim(),
                 source: "ai",
                 status: "draft"
             };
         })
         .filter(Boolean)
         .slice(0, 5);
+
+    return { suggestions, analyses };
 };
 
 const buildPersonalizedHookMessage = async (target) => {
     const safeTarget = target || {};
-    const fallbackMessage = `Bonjour ${safeTarget.fullName || ""}, j’ai apprécié vos contenus sur ${safeTarget.headline || "LinkedIn"}. Ravi d’échanger avec vous.`;
+    const persona = await getPersona();
+    const recentPosts = safeTarget && safeTarget.pendingComments && Array.isArray(safeTarget.pendingComments.posts)
+        ? safeTarget.pendingComments.posts.slice(0, 2).map(p => p && p.text ? p.text.slice(0, 180) : "").filter(Boolean)
+        : [];
+
+    const fallbackMessage = `Bonjour ${safeTarget.fullName || ""}, j’ai beaucoup apprécié votre approche sur ${safeTarget.headline || "vos sujets LinkedIn"}. Au plaisir d’échanger avec vous.`;
     const { ok, data } = await fetchOpenAI({
         model: "gpt-4o",
         messages: [{
             role: "user",
-            content: `Rédige un message de connexion LinkedIn personnalisé en français, naturel et court (max 280 caractères).
-Nom: ${safeTarget.fullName || ""}
-Headline: ${safeTarget.headline || ""}
+            content: `Rédige un message de connexion LinkedIn ultra personnalisé (français, max 280 caractères).
+Persona client: ${persona || "non précisée"}
+Nom cible: ${safeTarget.fullName || ""}
+Description cible: ${safeTarget.headline || ""}
 Catégorie: ${safeTarget.category || ""}
-Contrainte: mentionner un élément concret du profil, pas d'émoji, pas de tournure générique.`
+Extraits de posts cible: ${recentPosts.join(" | ") || "N/A"}
+Contraintes: concret, crédible, pas de formule creuse, pas d'émoji.`
         }],
-        temperature: 0.4
+        temperature: 0.35
     });
 
     if (!ok || !data || !data.choices || !data.choices[0] || !data.choices[0].message) {
@@ -340,7 +412,7 @@ const connectToProfile = async (profileUrl, message) => {
         return { success: false, error: errorMessage };
     } finally {
         if (typeof tabId === "number") {
-            chrome.tabs.remove(tabId, () => void chrome.runtime.lastError);
+            chrome.tabs.update(tabId, { active: false }, () => void chrome.runtime.lastError);
         }
     }
 };
@@ -930,7 +1002,9 @@ if (runtimeApi && runtimeApi.onMessage) runtimeApi.onMessage.addListener((reques
                   });
                   if (scanResult && scanResult.success && Array.isArray(scanResult.posts)) {
                       totalPosts += scanResult.posts.length;
-                      const commentSuggestions = await generateCommentSuggestions(target, scanResult.posts, request.objectives || "");
+                      const commentResult = await generateCommentSuggestions(target, scanResult.posts, request.objectives || "");
+                      const commentSuggestions = Array.isArray(commentResult.suggestions) ? commentResult.suggestions : [];
+                      const analyses = Array.isArray(commentResult.analyses) ? commentResult.analyses : [];
                       console.log("[START_FOLLOWED_SCAN] suggestions_generated", {
                           profileUrl: target.profileUrl,
                           suggestionsCount: commentSuggestions.length
@@ -940,6 +1014,7 @@ if (runtimeApi && runtimeApi.onMessage) runtimeApi.onMessage.addListener((reques
                           profileUrl: target.profileUrl,
                           posts: scanResult.posts,
                           suggestions: commentSuggestions,
+                          analyses,
                           scannedAt: Date.now()
                       });
                   } else {
