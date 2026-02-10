@@ -4,11 +4,20 @@ const REJECTED_KEY = "rejected";
 const HUNTER_CONSENT_KEY = "consentGiven";
 const QUEUE_ALARM = "ghostly-post-queue";
 const CONTENT_SCRIPT_FILES = ['selectors.js', 'content.js'];
+const hasChrome = typeof chrome !== "undefined";
+const runtimeApi = hasChrome && chrome.runtime ? chrome.runtime : null;
+const storageLocalApi = hasChrome && chrome.storage && chrome.storage.local ? chrome.storage.local : null;
+const storageSyncApi = hasChrome && chrome.storage && chrome.storage.sync ? chrome.storage.sync : null;
+const alarmsApi = hasChrome && chrome.alarms ? chrome.alarms : null;
 
 const getApiKey = () => new Promise(resolve => {
-    const syncStore = chrome.storage && chrome.storage.sync;
+    const syncStore = storageSyncApi;
     if (!syncStore) {
-        chrome.storage.local.get([API_KEY_STORAGE_KEY], localResult => {
+        if (!storageLocalApi) {
+            resolve("");
+            return;
+        }
+        storageLocalApi.get([API_KEY_STORAGE_KEY], localResult => {
             resolve((localResult[API_KEY_STORAGE_KEY] || "").trim());
         });
         return;
@@ -19,34 +28,62 @@ const getApiKey = () => new Promise(resolve => {
             resolve(syncKey);
             return;
         }
-        chrome.storage.local.get([API_KEY_STORAGE_KEY], localResult => {
+        if (!storageLocalApi) {
+            resolve("");
+            return;
+        }
+        storageLocalApi.get([API_KEY_STORAGE_KEY], localResult => {
             resolve((localResult[API_KEY_STORAGE_KEY] || "").trim());
         });
     });
 });
 
 const getQueue = () => new Promise(resolve => {
-    chrome.storage.local.get(['postQueue'], r => resolve(r.postQueue || []));
+    if (!storageLocalApi) {
+        resolve([]);
+        return;
+    }
+    storageLocalApi.get(['postQueue'], r => resolve(r.postQueue || []));
 });
 
 const setQueue = (queue) => new Promise(resolve => {
-    chrome.storage.local.set({ postQueue: queue }, resolve);
+    if (!storageLocalApi) {
+        resolve();
+        return;
+    }
+    storageLocalApi.set({ postQueue: queue }, resolve);
 });
 
 const getTargets = () => new Promise(resolve => {
-    chrome.storage.local.get([TARGETS_KEY], r => resolve(r[TARGETS_KEY] || []));
+    if (!storageLocalApi) {
+        resolve([]);
+        return;
+    }
+    storageLocalApi.get([TARGETS_KEY], r => resolve(r[TARGETS_KEY] || []));
 });
 
 const setTargets = (targets) => new Promise(resolve => {
-    chrome.storage.local.set({ [TARGETS_KEY]: targets }, resolve);
+    if (!storageLocalApi) {
+        resolve();
+        return;
+    }
+    storageLocalApi.set({ [TARGETS_KEY]: targets }, resolve);
 });
 
 const getRejected = () => new Promise(resolve => {
-    chrome.storage.local.get([REJECTED_KEY], r => resolve(r[REJECTED_KEY] || []));
+    if (!storageLocalApi) {
+        resolve([]);
+        return;
+    }
+    storageLocalApi.get([REJECTED_KEY], r => resolve(r[REJECTED_KEY] || []));
 });
 
 const setRejected = (rejected) => new Promise(resolve => {
-    chrome.storage.local.set({ [REJECTED_KEY]: rejected }, resolve);
+    if (!storageLocalApi) {
+        resolve();
+        return;
+    }
+    storageLocalApi.set({ [REJECTED_KEY]: rejected }, resolve);
 });
 
 const fetchOpenAI = async (payload) => {
@@ -370,7 +407,7 @@ const runHunter = async ({ url, category, settings, consentGiven }) => {
     };
 };
 
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+if (runtimeApi && runtimeApi.onMessage) runtimeApi.onMessage.addListener((request, sender, sendResponse) => {
   // RADAR
   if (request.action === "ANALYZE_FEED_MANUAL") {
       (async () => {
@@ -606,15 +643,15 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 });
 
-chrome.runtime.onInstalled.addListener(() => {
+if (runtimeApi && runtimeApi.onInstalled) runtimeApi.onInstalled.addListener(() => {
     scheduleNextPost();
 });
 
-chrome.runtime.onStartup.addListener(() => {
+if (runtimeApi && runtimeApi.onStartup) runtimeApi.onStartup.addListener(() => {
     scheduleNextPost();
 });
 
-chrome.alarms.onAlarm.addListener((alarm) => {
+if (alarmsApi && alarmsApi.onAlarm) alarmsApi.onAlarm.addListener((alarm) => {
     if (alarm.name === QUEUE_ALARM) {
         processQueue();
     }
