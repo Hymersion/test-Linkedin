@@ -9,6 +9,10 @@ const runtimeApi = hasChrome && chrome.runtime ? chrome.runtime : null;
 const storageLocalApi = hasChrome && chrome.storage && chrome.storage.local ? chrome.storage.local : null;
 const storageSyncApi = hasChrome && chrome.storage && chrome.storage.sync ? chrome.storage.sync : null;
 const alarmsApi = hasChrome && chrome.alarms ? chrome.alarms : null;
+const actionApi = hasChrome && chrome.action ? chrome.action : null;
+const windowsApi = hasChrome && chrome.windows ? chrome.windows : null;
+
+let dashboardWindowId = null;
 
 const getApiKey = () => new Promise(resolve => {
     const syncStore = storageSyncApi;
@@ -473,6 +477,61 @@ const publishSuggestionsForTarget = async ({ tabId, target, suggestions }) => {
         pendingComments: buildPendingComments()
     };
 };
+
+
+const openDashboardWindow = () => new Promise((resolve, reject) => {
+    if (!runtimeApi || !windowsApi) {
+        reject(new Error("API fenêtre extension indisponible."));
+        return;
+    }
+
+    const createWindow = () => {
+        windowsApi.create({
+            url: runtimeApi.getURL("dashboard.html"),
+            type: "popup",
+            focused: true,
+            width: 1100,
+            height: 780
+        }, (createdWindow) => {
+            const createError = chrome.runtime && chrome.runtime.lastError
+                ? chrome.runtime.lastError.message
+                : "";
+            if (createError || !createdWindow || typeof createdWindow.id !== "number") {
+                reject(new Error(createError || "Impossible d'ouvrir le dashboard."));
+                return;
+            }
+            dashboardWindowId = createdWindow.id;
+            resolve(createdWindow);
+        });
+    };
+
+    if (typeof dashboardWindowId !== "number") {
+        createWindow();
+        return;
+    }
+
+    windowsApi.get(dashboardWindowId, {}, (existingWindow) => {
+        const getError = chrome.runtime && chrome.runtime.lastError
+            ? chrome.runtime.lastError.message
+            : "";
+        if (getError || !existingWindow) {
+            dashboardWindowId = null;
+            createWindow();
+            return;
+        }
+        windowsApi.update(dashboardWindowId, { focused: true }, () => {
+            const updateError = chrome.runtime && chrome.runtime.lastError
+                ? chrome.runtime.lastError.message
+                : "";
+            if (updateError) {
+                dashboardWindowId = null;
+                createWindow();
+                return;
+            }
+            resolve(existingWindow);
+        });
+    });
+});
 
 const runHunter = async ({ url, category, settings, consentGiven }) => {
     const hasConsent = await ensureConsent(consentGiven);
@@ -979,6 +1038,21 @@ if (runtimeApi && runtimeApi.onMessage) runtimeApi.onMessage.addListener((reques
       })();
       return true;
   }
+});
+
+if (windowsApi && windowsApi.onRemoved) windowsApi.onRemoved.addListener((windowId) => {
+    if (windowId === dashboardWindowId) {
+        dashboardWindowId = null;
+    }
+});
+
+if (actionApi && actionApi.onClicked) actionApi.onClicked.addListener(() => {
+    openDashboardWindow().catch(error => {
+        console.error("[DASHBOARD_WINDOW] open_failed", {
+            errorMessage: error && error.message ? error.message : "Erreur inconnue",
+            error
+        });
+    });
 });
 
 if (runtimeApi && runtimeApi.onInstalled) runtimeApi.onInstalled.addListener(() => {

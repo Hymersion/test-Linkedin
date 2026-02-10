@@ -5,5 +5,5 @@
   "permissions": ["activeTab", "scripting", "storage", "alarms", "notifications"],
   "host_permissions": ["https://www.linkedin.com/*", "https://api.openai.com/*"],
   "background": { "service_worker": "background.js" },
-  "action": { "default_popup": "dashboard.html" }
+  "action": { "default_title": "Ouvrir Ghostly Dashboard" }
 }
