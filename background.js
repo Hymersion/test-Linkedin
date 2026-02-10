@@ -1,5 +1,3 @@
-importScripts('hunter_queries.js');
-
 const API_KEY_STORAGE_KEY = "openaiApiKey";
 const TARGETS_KEY = "targets";
 const REJECTED_KEY = "rejected";
@@ -129,6 +127,24 @@ const parseJsonSafe = (text) => {
     } catch (e) {
         return null;
     }
+};
+
+const buildHunterQuery = (keyword, customQuery, filters = {}) => {
+    const base = customQuery && customQuery.trim()
+        ? customQuery.trim()
+        : (keyword || "").trim();
+    const parts = [];
+    if (base) parts.push(`(${base})`);
+    if (filters.location) parts.push(filters.location);
+    if (filters.language) parts.push(filters.language);
+    if (filters.includeKeywords) parts.push(filters.includeKeywords);
+    if (filters.excludeKeywords) parts.push(`-${filters.excludeKeywords}`);
+    return parts.join(" ").trim();
+};
+
+const buildLinkedInSearchUrl = (query) => {
+    const encoded = encodeURIComponent(query);
+    return `https://www.linkedin.com/search/results/people/?keywords=${encoded}`;
 };
 
 const buildHunterSearchUrl = (category, settings) => {
