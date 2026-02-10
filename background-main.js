@@ -846,7 +846,18 @@ if (runtimeApi && runtimeApi.onMessage) runtimeApi.onMessage.addListener((reques
               let attempted = 0;
               const failedProfiles = [];
               const byProfileUrl = new Map(targets.map(target => [target.profileUrl, target.pendingComments]));
-              let updatedTargets = targets;
+
+              const persistPendingCommentsForProfile = async (profileUrl, pendingComments) => {
+                  byProfileUrl.set(profileUrl, pendingComments);
+                  const updatedTargets = targets.map(currentTarget => {
+                      if (!byProfileUrl.has(currentTarget.profileUrl)) return currentTarget;
+                      return {
+                          ...currentTarget,
+                          pendingComments: byProfileUrl.get(currentTarget.profileUrl)
+                      };
+                  });
+                  await setTargets(updatedTargets);
+              };
 
               for (const target of targetsWithSuggestions) {
                   const suggestions = target.pendingComments.suggestions || [];
@@ -859,7 +870,8 @@ if (runtimeApi && runtimeApi.onMessage) runtimeApi.onMessage.addListener((reques
                       const publishResult = await publishSuggestionsForTarget({ tabId, target, suggestions });
                       posted += publishResult.posted || 0;
                       attempted += publishResult.attempted || 0;
-                      byProfileUrl.set(target.profileUrl, publishResult.pendingComments || target.pendingComments);
+                      const nextPendingComments = publishResult.pendingComments || target.pendingComments;
+                      await persistPendingCommentsForProfile(target.profileUrl, nextPendingComments);
                       if ((publishResult.posted || 0) === 0) {
                           failedProfiles.push(target.fullName || target.profileUrl || "Profil");
                       }
@@ -871,17 +883,8 @@ if (runtimeApi && runtimeApi.onMessage) runtimeApi.onMessage.addListener((reques
                       });
                       failedProfiles.push(target.fullName || target.profileUrl || "Profil");
                       attempted += suggestions.length;
-                      byProfileUrl.set(target.profileUrl, target.pendingComments);
+                      await persistPendingCommentsForProfile(target.profileUrl, target.pendingComments);
                   }
-
-                  updatedTargets = updatedTargets.map(currentTarget => {
-                      if (!byProfileUrl.has(currentTarget.profileUrl)) return currentTarget;
-                      return {
-                          ...currentTarget,
-                          pendingComments: byProfileUrl.get(currentTarget.profileUrl)
-                      };
-                  });
-                  await setTargets(updatedTargets);
                   console.log("[PUBLISH_FOLLOWED_SCAN] target_persisted", {
                       profileUrl: target.profileUrl,
                       posted,
