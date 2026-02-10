@@ -485,14 +485,46 @@ const openDashboardWindow = () => new Promise((resolve, reject) => {
         return;
     }
 
-    const createWindow = () => {
+    const withCurrentWindow = (callback) => {
+        windowsApi.getCurrent({}, (currentWindow) => {
+            const currentWindowError = chrome.runtime && chrome.runtime.lastError
+                ? chrome.runtime.lastError.message
+                : "";
+            callback(currentWindowError ? null : currentWindow);
+        });
+    };
+
+    const createWindow = (currentWindow) => {
+        const screenWidth = currentWindow && currentWindow.width ? currentWindow.width : 1400;
+        const screenHeight = currentWindow && currentWindow.height ? currentWindow.height : 900;
+        const dashboardWidth = Math.max(460, Math.floor(screenWidth * 0.34));
+        const dashboardHeight = Math.max(700, screenHeight);
+        const dashboardLeft = currentWindow && typeof currentWindow.left === "number"
+            ? currentWindow.left + Math.max(0, screenWidth - dashboardWidth)
+            : 0;
+        const dashboardTop = currentWindow && typeof currentWindow.top === "number"
+            ? currentWindow.top
+            : 0;
+
+        if (currentWindow && typeof currentWindow.id === "number") {
+            const linkedinWidth = Math.max(760, screenWidth - dashboardWidth);
+            windowsApi.update(currentWindow.id, {
+                left: currentWindow.left,
+                top: currentWindow.top,
+                width: linkedinWidth,
+                height: screenHeight,
+                focused: true
+            }, () => void (chrome.runtime && chrome.runtime.lastError));
+        }
+
         windowsApi.create({
             url: runtimeApi.getURL("dashboard.html"),
-            // Use a normal window so it never behaves like a transient popup that closes on blur.
-            type: "normal",
-            focused: true,
-            width: 1100,
-            height: 780
+            type: "popup",
+            focused: false,
+            width: dashboardWidth,
+            height: dashboardHeight,
+            left: dashboardLeft,
+            top: dashboardTop
         }, (createdWindow) => {
             const createError = chrome.runtime && chrome.runtime.lastError
                 ? chrome.runtime.lastError.message
@@ -507,7 +539,7 @@ const openDashboardWindow = () => new Promise((resolve, reject) => {
     };
 
     if (typeof dashboardWindowId !== "number") {
-        createWindow();
+        withCurrentWindow(createWindow);
         return;
     }
 
@@ -517,7 +549,7 @@ const openDashboardWindow = () => new Promise((resolve, reject) => {
             : "";
         if (getError || !existingWindow) {
             dashboardWindowId = null;
-            createWindow();
+            withCurrentWindow(createWindow);
             return;
         }
         windowsApi.update(dashboardWindowId, { focused: true }, () => {
@@ -526,7 +558,7 @@ const openDashboardWindow = () => new Promise((resolve, reject) => {
                 : "";
             if (updateError) {
                 dashboardWindowId = null;
-                createWindow();
+                withCurrentWindow(createWindow);
                 return;
             }
             resolve(existingWindow);
