@@ -339,6 +339,83 @@ const waitTabComplete = (tabId, timeoutMs) => new Promise((resolve, reject) => {
     chrome.tabs.onUpdated.addListener(onUpdated);
 });
 
+const publishSuggestionsForTarget = async ({ tabId, target, suggestions }) => {
+    const profileUrl = target && target.profileUrl ? target.profileUrl : "";
+    console.log("[PUBLISH_FOLLOWED_SCAN] publishSuggestionsForTarget:start", {
+        tabId,
+        profileUrl,
+        suggestionsCount: Array.isArray(suggestions) ? suggestions.length : 0
+    });
+    if (!profileUrl) {
+        console.warn("[PUBLISH_FOLLOWED_SCAN] publishSuggestionsForTarget:missing_profile_url");
+        return { success: false, posted: 0, attempted: 0, error: "URL profil manquante." };
+    }
+    const activityUrl = profileUrl.endsWith("/")
+        ? `${profileUrl}recent-activity/all/`
+        : `${profileUrl}/recent-activity/all/`;
+    console.log("[PUBLISH_FOLLOWED_SCAN] publishSuggestionsForTarget:navigate", { activityUrl });
+    await chrome.tabs.update(tabId, { url: activityUrl });
+    await waitTabComplete(tabId, 20000);
+    console.log("[PUBLISH_FOLLOWED_SCAN] publishSuggestionsForTarget:tab_complete", { profileUrl });
+    await chrome.scripting.executeScript({ target: { tabId }, files: CONTENT_SCRIPT_FILES });
+    console.log("[PUBLISH_FOLLOWED_SCAN] publishSuggestionsForTarget:script_injected", { profileUrl });
+
+    let posted = 0;
+    const attempted = suggestions.length;
+    const updatedSuggestions = [];
+    for (const suggestion of suggestions) {
+        const status = suggestion && suggestion.status ? suggestion.status : "draft";
+        console.log("[PUBLISH_FOLLOWED_SCAN] publishSuggestionsForTarget:suggestion", {
+            profileUrl,
+            urn: suggestion && suggestion.urn ? suggestion.urn : null,
+            status
+        });
+        if (status === "published") {
+            updatedSuggestions.push(suggestion);
+            continue;
+        }
+        if (!suggestion || !suggestion.urn || !String(suggestion.comment || "").trim()) {
+            updatedSuggestions.push({ ...suggestion, status: "error", error: "Suggestion incomplète." });
+            continue;
+        }
+        const publishResult = await new Promise(resolve => {
+            chrome.tabs.sendMessage(tabId, {
+                action: "COMMENT_ON_FEED_POST_BY_URN",
+                targetURN: suggestion.urn,
+                text: suggestion.comment
+            }, resolve);
+        });
+
+        if (publishResult && publishResult.success) {
+            console.log("[PUBLISH_FOLLOWED_SCAN] publishSuggestionsForTarget:publish_success", { profileUrl, urn: suggestion.urn });
+            posted += 1;
+            updatedSuggestions.push({ ...suggestion, status: "published", publishedAt: Date.now() });
+        } else {
+            console.warn("[PUBLISH_FOLLOWED_SCAN] publishSuggestionsForTarget:publish_failed", {
+                profileUrl,
+                urn: suggestion.urn,
+                publishResult
+            });
+            updatedSuggestions.push({ ...suggestion, status: "error", error: "Échec de publication LinkedIn." });
+        }
+        await new Promise(r => setTimeout(r, 1200));
+    }
+
+    console.log("[PUBLISH_FOLLOWED_SCAN] publishSuggestionsForTarget:done", { profileUrl, posted, attempted });
+
+    return {
+        success: posted > 0,
+        posted,
+        attempted,
+        pendingComments: {
+            ...(target.pendingComments || {}),
+            profileUrl,
+            suggestions: updatedSuggestions,
+            lastPublishedAt: Date.now()
+        }
+    };
+};
+
 const runHunter = async ({ url, category, settings, consentGiven }) => {
     const hasConsent = await ensureConsent(consentGiven);
     if (!hasConsent) {
@@ -638,39 +715,69 @@ if (runtimeApi && runtimeApi.onMessage) runtimeApi.onMessage.addListener((reques
       (async () => {
           let tabId = null;
           try {
+              console.log("[START_FOLLOWED_SCAN] start", {
+                  category: request.category || "all",
+                  testLimit: request.testLimit || 10
+              });
               const targets = await getTargets();
               const category = request.category || "all";
               const filtered = category === "all" ? targets : targets.filter(t => (t.category || "").toLowerCase() === category.toLowerCase());
+              console.log("[START_FOLLOWED_SCAN] targets_loaded", { totalTargets: targets.length, filtered: filtered.length });
               if (!filtered.length) {
                   sendResponse({ success: false, error: "Aucun profil suivi dans cette catégorie." });
                   return;
               }
               const limit = Math.max(1, Number(request.testLimit || 10));
               const payload = filtered.slice(0, limit);
+              console.log("[START_FOLLOWED_SCAN] payload_ready", { payloadSize: payload.length, limit });
               let totalPosts = 0;
               let totalSuggestions = 0;
               const suggestions = [];
               tabId = await createInactiveTab("https://www.linkedin.com/feed/");
+              console.log("[START_FOLLOWED_SCAN] tab_created", { tabId });
               for (const target of payload) {
-                  if (!target.profileUrl) continue;
+                  if (!target.profileUrl) {
+                      console.warn("[START_FOLLOWED_SCAN] skip_target_missing_profileUrl", { target });
+                      continue;
+                  }
+                  console.log("[START_FOLLOWED_SCAN] processing_target", {
+                      profileUrl: target.profileUrl,
+                      fullName: target.fullName || null
+                  });
                   const activityUrl = target.profileUrl.endsWith("/")
                       ? `${target.profileUrl}recent-activity/all/`
                       : `${target.profileUrl}/recent-activity/all/`;
                   await chrome.tabs.update(tabId, { url: activityUrl });
                   await waitTabComplete(tabId, 15000);
+                  console.log("[START_FOLLOWED_SCAN] tab_ready", { profileUrl: target.profileUrl });
                   await chrome.scripting.executeScript({ target: { tabId }, files: CONTENT_SCRIPT_FILES });
+                  console.log("[START_FOLLOWED_SCAN] script_injected", { profileUrl: target.profileUrl });
                   const scanResult = await new Promise(resolve => {
                       chrome.tabs.sendMessage(tabId, { action: "SCAN_PROFILE_POSTS" }, resolve);
+                  });
+                  console.log("[START_FOLLOWED_SCAN] scan_result", {
+                      profileUrl: target.profileUrl,
+                      success: !!(scanResult && scanResult.success),
+                      postsCount: Array.isArray(scanResult && scanResult.posts) ? scanResult.posts.length : 0
                   });
                   if (scanResult && scanResult.success && Array.isArray(scanResult.posts)) {
                       totalPosts += scanResult.posts.length;
                       const commentSuggestions = await generateCommentSuggestions(target, scanResult.posts, request.objectives || "");
+                      console.log("[START_FOLLOWED_SCAN] suggestions_generated", {
+                          profileUrl: target.profileUrl,
+                          suggestionsCount: commentSuggestions.length
+                      });
                       totalSuggestions += commentSuggestions.length;
                       suggestions.push({
                           profileUrl: target.profileUrl,
                           posts: scanResult.posts,
                           suggestions: commentSuggestions,
                           scannedAt: Date.now()
+                      });
+                  } else {
+                      console.warn("[START_FOLLOWED_SCAN] scan_result_invalid_or_empty", {
+                          profileUrl: target.profileUrl,
+                          scanResult
                       });
                   }
                   await new Promise(r => setTimeout(r, 1500));
@@ -687,9 +794,15 @@ if (runtimeApi && runtimeApi.onMessage) runtimeApi.onMessage.addListener((reques
                   return t;
               });
               await setTargets(updatedTargets);
+              console.log("[START_FOLLOWED_SCAN] completed", {
+                  payload: payload.length,
+                  totalPosts,
+                  totalSuggestions
+              });
               sendResponse({ success: true, count: payload.length, message: `Scan terminé: ${payload.length} profils, ${totalPosts} posts détectés, ${totalSuggestions} propositions générées.` });
           } catch (error) {
               const errorMessage = error && error.message ? error.message : "Erreur pendant le scan des profils suivis.";
+              console.error("[START_FOLLOWED_SCAN] failed", { errorMessage, error });
               sendResponse({ success: false, error: errorMessage });
           } finally {
               if (typeof tabId === "number") {
@@ -701,7 +814,100 @@ if (runtimeApi && runtimeApi.onMessage) runtimeApi.onMessage.addListener((reques
   }
   if (request.action === "PUBLISH_FOLLOWED_SCAN") {
       (async () => {
-          sendResponse({ success: true });
+          let tabId = null;
+          try {
+              console.log("[PUBLISH_FOLLOWED_SCAN] start", { category: request.category || "all" });
+              const targets = await getTargets();
+              const category = request.category || "all";
+              const filteredTargets = category === "all"
+                  ? targets
+                  : targets.filter(t => (t.category || "").toLowerCase() === category.toLowerCase());
+              const targetsWithSuggestions = filteredTargets.filter(t =>
+                  t &&
+                  t.pendingComments &&
+                  Array.isArray(t.pendingComments.suggestions) &&
+                  t.pendingComments.suggestions.some(s => (s.status || "draft") !== "published")
+              );
+
+              console.log("[PUBLISH_FOLLOWED_SCAN] targets_ready", {
+                  totalTargets: targets.length,
+                  filteredTargets: filteredTargets.length,
+                  targetsWithSuggestions: targetsWithSuggestions.length
+              });
+
+              if (!targetsWithSuggestions.length) {
+                  sendResponse({ success: false, error: "Aucun commentaire en attente de publication." });
+                  return;
+              }
+
+              tabId = await createInactiveTab("https://www.linkedin.com/feed/");
+              console.log("[PUBLISH_FOLLOWED_SCAN] tab_created", { tabId });
+              let posted = 0;
+              let attempted = 0;
+              const failedProfiles = [];
+              const byProfileUrl = new Map(targets.map(target => [target.profileUrl, target.pendingComments]));
+
+              const persistPendingCommentsForProfile = async (profileUrl, pendingComments) => {
+                  byProfileUrl.set(profileUrl, pendingComments);
+                  const updatedTargets = targets.map(currentTarget => {
+                      if (!byProfileUrl.has(currentTarget.profileUrl)) return currentTarget;
+                      return {
+                          ...currentTarget,
+                          pendingComments: byProfileUrl.get(currentTarget.profileUrl)
+                      };
+                  });
+                  await setTargets(updatedTargets);
+              };
+
+              for (const target of targetsWithSuggestions) {
+                  const suggestions = target.pendingComments.suggestions || [];
+                  console.log("[PUBLISH_FOLLOWED_SCAN] processing_target", {
+                      profileUrl: target.profileUrl,
+                      fullName: target.fullName || null,
+                      suggestionsCount: suggestions.length
+                  });
+                  try {
+                      const publishResult = await publishSuggestionsForTarget({ tabId, target, suggestions });
+                      posted += publishResult.posted || 0;
+                      attempted += publishResult.attempted || 0;
+                      const nextPendingComments = publishResult.pendingComments || target.pendingComments;
+                      await persistPendingCommentsForProfile(target.profileUrl, nextPendingComments);
+                      if ((publishResult.posted || 0) === 0) {
+                          failedProfiles.push(target.fullName || target.profileUrl || "Profil");
+                      }
+                  } catch (error) {
+                      console.error("[PUBLISH_FOLLOWED_SCAN] target_failed", {
+                          profileUrl: target.profileUrl,
+                          errorMessage: error && error.message ? error.message : "Erreur inconnue",
+                          error
+                      });
+                      failedProfiles.push(target.fullName || target.profileUrl || "Profil");
+                      attempted += suggestions.length;
+                      await persistPendingCommentsForProfile(target.profileUrl, target.pendingComments);
+                  }
+                  console.log("[PUBLISH_FOLLOWED_SCAN] target_persisted", {
+                      profileUrl: target.profileUrl,
+                      posted,
+                      attempted,
+                      failedProfilesCount: failedProfiles.length
+                  });
+              }
+
+              const success = posted > 0;
+              console.log("[PUBLISH_FOLLOWED_SCAN] completed", { posted, attempted, failedProfilesCount: failedProfiles.length, success });
+              const message = success
+                  ? `Publication terminée: ${posted}/${attempted} commentaires publiés.`
+                  : "Aucun commentaire n'a pu être publié.";
+              sendResponse({ success, posted, attempted, failedProfiles, message });
+          } catch (error) {
+              const errorMessage = error && error.message ? error.message : "Erreur pendant la publication des commentaires.";
+              console.error("[PUBLISH_FOLLOWED_SCAN] failed", { errorMessage, error });
+              sendResponse({ success: false, error: errorMessage });
+          } finally {
+              if (typeof tabId === "number") {
+                  chrome.tabs.remove(tabId, () => void chrome.runtime.lastError);
+              }
+          }
       })();
       return true;
   }

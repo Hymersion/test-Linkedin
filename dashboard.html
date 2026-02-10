@@ -21,8 +21,8 @@
       font-family: "Inter", "Segoe UI", system-ui, sans-serif;
       margin:0;
       display:flex;
-      height:620px;
-      width:520px;
+      height:680px;
+      width:560px;
       background:var(--bg);
       color:var(--text);
     }
@@ -44,8 +44,9 @@
     }
     .main{
       flex:1;
-      padding:16px 18px;
+      padding:18px 18px 22px;
       overflow-y:auto;
+      scrollbar-width: thin;
     }
     .nav-btn{
       width:100%;
@@ -78,6 +79,7 @@
       border-radius:var(--radius);
       box-shadow:var(--shadow);
       margin-bottom:14px;
+      border:1px solid #e5e7eb;
     }
     button{
       width:100%;
@@ -143,6 +145,66 @@
     .muted{color:var(--muted);font-size:12px;}
     .row{display:flex;gap:8px;}
     .row > *{flex:1;}
+
+    h4{
+      margin:0 0 10px;
+      font-size:14px;
+    }
+    .page-header{
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:10px;
+      margin-bottom:12px;
+    }
+    .page-header p{
+      margin:4px 0 0;
+      color:var(--muted);
+      font-size:12px;
+    }
+    .badge{
+      padding:6px 10px;
+      border-radius:999px;
+      background:#dbeafe;
+      color:#1e3a8a;
+      font-size:11px;
+      font-weight:600;
+      white-space:nowrap;
+    }
+    .quick-grid{
+      display:grid;
+      grid-template-columns:1fr 1fr;
+      gap:10px;
+    }
+    .panel{
+      padding:10px;
+      border:1px solid #e5e7eb;
+      border-radius:10px;
+      background:#f8fafc;
+    }
+    .panel label{display:block;margin-bottom:4px;}
+    select{
+      width:100%;
+      border:1px solid #e5e7eb;
+      border-radius:10px;
+      padding:10px;
+      font-size:12px;
+      background:#f8fafc;
+      margin-bottom:8px;
+    }
+    button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{
+      outline:2px solid #93c5fd;
+      outline-offset:1px;
+    }
+    .row.wrap{flex-wrap:wrap;}
+    .row.wrap > *{flex:initial;}
+    .sticky-actions{
+      position:sticky;
+      bottom:0;
+      background:linear-gradient(180deg, rgba(255,255,255,0), #fff 35%);
+      padding-top:8px;
+      margin-top:8px;
+    }
   </style>
 </head>
 <body>
@@ -158,7 +220,7 @@
   
   <div class="main">
     <div id="tab_radar" class="tab active">
-        <h3>Auto-commentaire</h3>
+        <div class="page-header"><div><h3>Auto-commentaire</h3><p>Scannez le fil ou vos profils suivis pour générer des opportunités commentées.</p></div><span class="badge">Workflow assisté</span></div>
         <div class="section">
             <div class="row">
                 <button class="btn-secondary" id="auto_tab_feed">Scan mon fil</button>
@@ -167,14 +229,14 @@
         </div>
         <div class="section" id="auto_section_quick">
             <h4>Actions rapides</h4>
-            <div class="row">
-                <div>
+            <div class="quick-grid">
+                <div class="panel">
                     <label for="input_scroll">Durée du scan (sec)</label>
                     <input type="number" id="input_scroll" value="20">
                     <button id="btn_scan_radar" class="btn-accent">Analyser le fil</button>
                     <p class="muted">Analyse le fil LinkedIn et propose des réponses prêtes à publier.</p>
                 </div>
-                <div>
+                <div class="panel">
                     <label for="input_url">URL du post</label>
                     <input id="input_url" placeholder="https://www.linkedin.com/...">
                     <button id="btn_scan_post">Analyser le post</button>
@@ -235,10 +297,10 @@
                     <option value="18:00">18:00</option>
                 </select>
             </div>
-            <div class="row">
-                <div>
+            <div class="quick-grid">
+                <div class="panel">
                     <label class="muted">Heure</label>
-                    <div class="row">
+                    <div class="row wrap">
                         <button class="btn-secondary" type="button" data-time="08:00">08:00</button>
                         <button class="btn-secondary" type="button" data-time="10:00">10:00</button>
                         <button class="btn-secondary" type="button" data-time="12:00">12:00</button>
@@ -246,9 +308,9 @@
                         <button class="btn-secondary" type="button" data-time="18:00">18:00</button>
                     </div>
                 </div>
-                <div>
+                <div class="panel">
                     <label class="muted">Jours</label>
-                    <div class="row">
+                    <div class="row wrap">
                         <button class="btn-secondary" type="button" data-day="Lun">Lun</button>
                         <button class="btn-secondary" type="button" data-day="Mar">Mar</button>
                         <button class="btn-secondary" type="button" data-day="Mer">Mer</button>
@@ -260,9 +322,11 @@
             <p class="muted">Choisissez “tous les X jours à HH:MM”, ou un rythme quotidien/hebdo.</p>
             <label for="auto_objectives">Objectifs client</label>
             <textarea id="auto_objectives" style="height:100px;" placeholder="Ex: détecter des opportunités B2B, ton professionnel, prioriser les leads qualifiés."></textarea>
-            <div class="row">
-                <button class="btn-secondary" id="btn_auto_followed_preview">Tester le scan</button>
-                <button class="btn-success" id="btn_auto_followed_publish">Publier sélection</button>
+            <div class="sticky-actions">
+                <div class="row">
+                    <button class="btn-secondary" id="btn_auto_followed_preview">Tester le scan</button>
+                    <button class="btn-success" id="btn_auto_followed_publish">Publier sélection</button>
+                </div>
             </div>
         </div>
         <div class="section" id="auto_section_verify">

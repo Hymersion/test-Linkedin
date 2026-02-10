@@ -464,9 +464,30 @@ const initDashboard = () => {
     if (autoTargetsStart) {
         autoTargetsStart.addEventListener('click', () => {
             const category = autoTargetsCategorySelect ? autoTargetsCategorySelect.value : 'all';
+            const testLimit = autoTestLimit ? Number(autoTestLimit.value) : 2;
+            const objectives = autoObjectives ? autoObjectives.value.trim() : "";
             const days = Array.from(scheduleState.days).join(', ') || 'tous';
             const cadence = `tous les ${scheduleState.everyDays} jours à ${scheduleState.time}`;
-            setHunterStatus(`Planification: ${category} • ${cadence} • ${scheduleState.frequency} • ${days}`);
+
+            if (!chromeAvailable) {
+                setHunterStatus("Fonctionnalité indisponible hors extension.", true);
+                return;
+            }
+
+            setHunterStatus(`Démarrage scan suivi: ${category} • ${cadence} • ${scheduleState.frequency} • ${days}`);
+            chrome.runtime.sendMessage({
+                action: "START_FOLLOWED_SCAN",
+                category,
+                objectives,
+                testLimit
+            }, response => {
+                if (!response || !response.success) {
+                    setHunterStatus(response && response.error ? response.error : "Scan des profils suivis échoué.", true);
+                    return;
+                }
+                loadTargets();
+                setHunterStatus(response.message || `Scan terminé: ${response.count || 0} profils traités.`);
+            });
         });
     }
 
@@ -489,6 +510,7 @@ const initDashboard = () => {
                     setHunterStatus(response && response.error ? response.error : "Test de scan échoué.", true);
                     return;
                 }
+                loadTargets();
                 setHunterStatus(response.message || `Test terminé: ${response.count || 0} profils détectés.`);
             });
         });
