@@ -160,6 +160,43 @@ const initDashboard = () => {
         hunterStatus.style.color = isError ? "#dc2626" : "";
     };
 
+    const renderPendingSuggestionsPreview = (entries) => {
+        if (!autoCommentPreview) return;
+        autoCommentPreview.innerHTML = "";
+        const pending = [];
+        (entries || []).forEach(entry => {
+            const suggestions = entry && Array.isArray(entry.suggestions) ? entry.suggestions : [];
+            suggestions.forEach((suggestion, idx) => {
+                pending.push({
+                    fullName: entry.fullName || entry.profileUrl || "Profil",
+                    suggestion,
+                    key: `${entry.profileUrl || 'profile'}-${idx}`
+                });
+            });
+        });
+        if (!pending.length) {
+            autoCommentPreview.innerHTML = '<p class="muted">Aucune proposition de commentaire pour le moment.</p>';
+            return;
+        }
+        pending.slice(0, 30).forEach((item, idx) => {
+            const row = document.createElement('div');
+            row.className = 'card';
+            row.innerHTML = `
+                <div style="display:flex;justify-content:space-between;gap:8px;">
+                    <div>
+                        <b>${item.fullName}</b><br>
+                        <span class="muted">${(item.suggestion.postText || '').substring(0, 120)}...</span><br>
+                        <textarea id="pending-comment-${idx}" style="width:100%;margin-top:6px;">${item.suggestion.comment || ''}</textarea>
+                    </div>
+                    <div>
+                        <input type="checkbox" id="pending-check-${idx}" checked>
+                    </div>
+                </div>
+            `;
+            autoCommentPreview.appendChild(row);
+        });
+    };
+
     const renderHunterCandidates = (candidates) => {
         if (!hunterCandidates) return;
         hunterCandidates.innerHTML = "";
@@ -329,44 +366,14 @@ const initDashboard = () => {
             });
         });
 
-        if (autoCommentPreview) {
-            autoCommentPreview.innerHTML = "";
-            const pending = [];
-            (targets || []).forEach(t => {
-                const suggestions = t && t.pendingComments && Array.isArray(t.pendingComments.suggestions)
-                    ? t.pendingComments.suggestions
-                    : [];
-                suggestions.forEach((s, idx) => {
-                    pending.push({
-                        profileUrl: t.profileUrl,
-                        fullName: t.fullName || "Profil",
-                        suggestion: s,
-                        key: `${t.profileUrl || 'profile'}-${idx}`
-                    });
-                });
-            });
-            if (!pending.length) {
-                autoCommentPreview.innerHTML = '<p class="muted">Aucune proposition de commentaire pour le moment.</p>';
-            } else {
-                pending.slice(0, 30).forEach((item, idx) => {
-                    const row = document.createElement('div');
-                    row.className = 'card';
-                    row.innerHTML = `
-                        <div style="display:flex;justify-content:space-between;gap:8px;">
-                            <div>
-                                <b>${item.fullName}</b><br>
-                                <span class="muted">${(item.suggestion.postText || '').substring(0, 120)}...</span><br>
-                                <textarea id="pending-comment-${idx}" style="width:100%;margin-top:6px;">${item.suggestion.comment || ''}</textarea>
-                            </div>
-                            <div>
-                                <input type="checkbox" id="pending-check-${idx}" checked>
-                            </div>
-                        </div>
-                    `;
-                    autoCommentPreview.appendChild(row);
-                });
-            }
-        }
+        const previewEntries = (targets || []).map(t => ({
+            profileUrl: t.profileUrl,
+            fullName: t.fullName || "Profil",
+            suggestions: t && t.pendingComments && Array.isArray(t.pendingComments.suggestions)
+                ? t.pendingComments.suggestions
+                : []
+        }));
+        renderPendingSuggestionsPreview(previewEntries);
     };
 
     const loadTargets = () => {
@@ -488,6 +495,14 @@ const initDashboard = () => {
                 if (!response || !response.success) {
                     setHunterStatus(response && response.error ? response.error : "Test de scan échoué.", true);
                     return;
+                }
+                if (response.suggestionsByProfile && Array.isArray(response.suggestionsByProfile)) {
+                    const immediateEntries = response.suggestionsByProfile.map(entry => ({
+                        profileUrl: entry.profileUrl,
+                        fullName: entry.profileUrl || "Profil",
+                        suggestions: Array.isArray(entry.suggestions) ? entry.suggestions : []
+                    }));
+                    renderPendingSuggestionsPreview(immediateEntries);
                 }
                 loadTargets();
                 setHunterStatus(response.message || `Test terminé: ${response.count || 0} profils détectés.`);
