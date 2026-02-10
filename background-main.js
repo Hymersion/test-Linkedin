@@ -416,6 +416,18 @@ const publishSuggestionsForTarget = async ({ tabId, target, suggestions }) => {
     };
 };
 
+const persistTargetPendingComments = async ({ targets, profileUrl, pendingComments }) => {
+    const updatedTargets = targets.map(currentTarget => {
+        if (currentTarget.profileUrl !== profileUrl) return currentTarget;
+        return {
+            ...currentTarget,
+            pendingComments
+        };
+    });
+    await setTargets(updatedTargets);
+    return updatedTargets;
+};
+
 const runHunter = async ({ url, category, settings, consentGiven }) => {
     const hasConsent = await ensureConsent(consentGiven);
     if (!hasConsent) {
@@ -845,11 +857,11 @@ if (runtimeApi && runtimeApi.onMessage) runtimeApi.onMessage.addListener((reques
               let posted = 0;
               let attempted = 0;
               const failedProfiles = [];
-              const byProfileUrl = new Map(targets.map(target => [target.profileUrl, target.pendingComments]));
               let updatedTargets = targets;
 
               for (const target of targetsWithSuggestions) {
                   const suggestions = target.pendingComments.suggestions || [];
+                  let pendingCommentsToPersist = target.pendingComments;
                   console.log("[PUBLISH_FOLLOWED_SCAN] processing_target", {
                       profileUrl: target.profileUrl,
                       fullName: target.fullName || null,
@@ -859,7 +871,7 @@ if (runtimeApi && runtimeApi.onMessage) runtimeApi.onMessage.addListener((reques
                       const publishResult = await publishSuggestionsForTarget({ tabId, target, suggestions });
                       posted += publishResult.posted || 0;
                       attempted += publishResult.attempted || 0;
-                      byProfileUrl.set(target.profileUrl, publishResult.pendingComments || target.pendingComments);
+                      pendingCommentsToPersist = publishResult.pendingComments || target.pendingComments;
                       if ((publishResult.posted || 0) === 0) {
                           failedProfiles.push(target.fullName || target.profileUrl || "Profil");
                       }
@@ -871,17 +883,14 @@ if (runtimeApi && runtimeApi.onMessage) runtimeApi.onMessage.addListener((reques
                       });
                       failedProfiles.push(target.fullName || target.profileUrl || "Profil");
                       attempted += suggestions.length;
-                      byProfileUrl.set(target.profileUrl, target.pendingComments);
+                      pendingCommentsToPersist = target.pendingComments;
                   }
 
-                  updatedTargets = updatedTargets.map(currentTarget => {
-                      if (!byProfileUrl.has(currentTarget.profileUrl)) return currentTarget;
-                      return {
-                          ...currentTarget,
-                          pendingComments: byProfileUrl.get(currentTarget.profileUrl)
-                      };
+                  updatedTargets = await persistTargetPendingComments({
+                      targets: updatedTargets,
+                      profileUrl: target.profileUrl,
+                      pendingComments: pendingCommentsToPersist
                   });
-                  await setTargets(updatedTargets);
                   console.log("[PUBLISH_FOLLOWED_SCAN] target_persisted", {
                       profileUrl: target.profileUrl,
                       posted,
