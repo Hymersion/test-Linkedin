@@ -38,13 +38,69 @@ if (!window.ghostlyLoaded) {
                container.querySelector('button[aria-label*="Post"]');
     };
 
+    const isConnectLabel = (value) => {
+        const label = String(value || "").toLowerCase();
+        return label.includes('se connecter') || label.includes('connect');
+    };
+
     const findConnectButton = () => {
+        const directSelectors = [
+            'button[data-control-name*="connect" i]',
+            'button[aria-label*="connect" i]',
+            'button[aria-label*="se connecter" i]',
+            'button.pvs-profile-actions__action'
+        ];
+        for (const selector of directSelectors) {
+            const btn = document.querySelector(selector);
+            if (btn && isConnectLabel(btn.innerText || btn.getAttribute('aria-label'))) return btn;
+        }
+
         const buttons = Array.from(document.querySelectorAll('button'));
-        const match = buttons.find(btn => {
-            const label = (btn.innerText || btn.getAttribute('aria-label') || "").toLowerCase();
-            return label.includes('se connecter') || label.includes('connect');
-        });
+        const match = buttons.find(btn => isConnectLabel(btn.innerText || btn.getAttribute('aria-label')));
         return match || null;
+    };
+
+    const findMoreActionsButton = () => {
+        const buttons = Array.from(document.querySelectorAll('button'));
+        return buttons.find(btn => {
+            const label = String(btn.innerText || btn.getAttribute('aria-label') || "").toLowerCase();
+            return label.includes('plus') || label.includes('more');
+        }) || null;
+    };
+
+    const clickConnectMenuItem = async () => {
+        const menuSelectors = [
+            'div[role="menu"] [role="menuitem"]',
+            'div[role="menu"] button',
+            '.artdeco-dropdown__content-inner button'
+        ];
+        for (const selector of menuSelectors) {
+            const items = Array.from(document.querySelectorAll(selector));
+            const connectItem = items.find(item => isConnectLabel(item.innerText || item.getAttribute('aria-label')));
+            if (connectItem) {
+                forceClick(connectItem);
+                return true;
+            }
+        }
+        return false;
+    };
+
+    const clickSendInviteButton = async () => {
+        const sendSelectors = [
+            'button[aria-label*="Envoyer" i]',
+            'button[aria-label*="Send" i]',
+            'button.artdeco-button--primary'
+        ];
+        for (const selector of sendSelectors) {
+            const btn = document.querySelector(selector);
+            if (!btn) continue;
+            const label = String(btn.innerText || btn.getAttribute('aria-label') || "").toLowerCase();
+            if (label.includes('envoyer') || label.includes('send') || label.includes('invitation')) {
+                forceClick(btn);
+                return true;
+            }
+        }
+        return false;
     };
 
     const waitForElement = async (selector, ctx = document, attempts = 12, delay = 400) => {
@@ -525,12 +581,29 @@ if (!window.ghostlyLoaded) {
                     sendResponse({ success: false, error: "Veuillez vous connecter à LinkedIn." });
                     return;
                 }
+
+                let connected = false;
                 const btn = findConnectButton();
-                if (!btn) {
+                if (btn) {
+                    connected = forceClick(btn);
+                }
+
+                if (!connected) {
+                    const moreActionsBtn = findMoreActionsButton();
+                    if (moreActionsBtn) {
+                        forceClick(moreActionsBtn);
+                        await new Promise(r => setTimeout(r, 500));
+                        connected = await clickConnectMenuItem();
+                    }
+                }
+
+                if (!connected) {
                     sendResponse({ success: false, error: "Bouton de connexion introuvable." });
                     return;
                 }
-                forceClick(btn);
+
+                await new Promise(r => setTimeout(r, 700));
+                await clickSendInviteButton();
                 sendResponse({ success: true });
             })();
             return true;
