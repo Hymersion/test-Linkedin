@@ -9,6 +9,7 @@ const runtimeApi = hasChrome && chrome.runtime ? chrome.runtime : null;
 const storageLocalApi = hasChrome && chrome.storage && chrome.storage.local ? chrome.storage.local : null;
 const storageSyncApi = hasChrome && chrome.storage && chrome.storage.sync ? chrome.storage.sync : null;
 const alarmsApi = hasChrome && chrome.alarms ? chrome.alarms : null;
+const sidePanelApi = hasChrome && chrome.sidePanel ? chrome.sidePanel : null;
 
 const getApiKey = () => new Promise(resolve => {
     const syncStore = storageSyncApi;
@@ -35,6 +36,16 @@ const getApiKey = () => new Promise(resolve => {
         storageLocalApi.get([API_KEY_STORAGE_KEY], localResult => {
             resolve((localResult[API_KEY_STORAGE_KEY] || "").trim());
         });
+    });
+});
+
+const getPersona = () => new Promise(resolve => {
+    if (!storageLocalApi) {
+        resolve("Expert LinkedIn pragmatique");
+        return;
+    }
+    storageLocalApi.get(['persona'], r => {
+        resolve((r && r.persona ? String(r.persona) : "Expert LinkedIn pragmatique").trim());
     });
 });
 
@@ -222,18 +233,30 @@ const buildFallbackComment = (postText, objectiveText) => {
 
 const generateCommentSuggestions = async (target, posts, objectives) => {
     const apiKey = await getApiKey();
+    const persona = await getPersona();
     const candidatePosts = Array.isArray(posts) ? posts.filter(p => p && p.text).slice(0, 10) : [];
-    if (!candidatePosts.length) return [];
+    if (!candidatePosts.length) return { suggestions: [], analyses: [] };
 
     if (!apiKey) {
-        return candidatePosts.slice(0, 3).map((post, idx) => ({
+        const suggestions = candidatePosts.slice(0, 3).map((post, idx) => ({
             id: `${target.profileUrl || 'profile'}-${Date.now()}-${idx}`,
             urn: post.urn || "",
             postText: post.text,
             comment: buildFallbackComment(post.text, objectives),
+            reason: "Fallback sans IA: commentaire basé sur le contenu du post.",
             source: "fallback",
             status: "draft"
         }));
+        const analyses = candidatePosts.map((post, idx) => ({
+            postIndex: idx + 1,
+            urn: post.urn || "",
+            postText: post.text,
+            pertinent: idx < 3,
+            reason: idx < 3
+                ? "Post jugé pertinent en fallback."
+                : "Post non traité faute d'IA (limite fallback à 3 commentaires)."
+        }));
+        return { suggestions, analyses };
     }
 
     const promptPosts = candidatePosts.map((post, index) => `${index + 1}. ${post.text}`).join("\n\n");
@@ -241,29 +264,70 @@ const generateCommentSuggestions = async (target, posts, objectives) => {
         model: "gpt-4o",
         messages: [{
             role: "user",
-            content: `Objectifs client: ${objectives || "non précisés"}\nProfil ciblé: ${target.fullName || "Profil LinkedIn"} | ${target.headline || ""}\n\nPosts récents:\n${promptPosts}\n\nPour chaque post vraiment pertinent, propose un commentaire opportunité (1-2 phrases max). Réponds en JSON strict: {"suggestions":[{"index":1,"comment":"...","reason":"..."}]}`
+            content: `Tu es un assistant LinkedIn expert.
+Persona client: ${persona || "non précisée"}
+Objectifs client: ${objectives || "non précisés"}
+Personne suivie: ${target.fullName || "Profil LinkedIn"}
+Description suivi: ${target.headline || ""}
+
+Posts récents:
+${promptPosts}
+
+Tâche:
+1) Évalue chaque post (pertinent ou non pour commenter au nom du client) avec une raison claire.
+2) Propose des commentaires uniquement pour les posts pertinents.
+3) Les commentaires doivent être spécifiques au post, actionnables, et refléter la personnalité du client.
+4) Évite toute phrase générique, vague ou hors-sujet.
+
+Réponse JSON strict:
+{
+  "analyses":[{"index":1,"pertinent":true,"reason":"..."}],
+  "suggestions":[{"index":1,"comment":"...","reason":"..."}]
+}`
         }],
-        temperature: 0.4
+        temperature: 0.35
     });
 
     if (!ok) {
-        return [{
-            id: `${target.profileUrl || 'profile'}-${Date.now()}-error`,
-            urn: "",
-            postText: "",
-            comment: "",
-            reason: error || "Erreur IA",
-            source: "ai_error",
-            status: "error"
-        }];
+        return {
+            suggestions: [{
+                id: `${target.profileUrl || 'profile'}-${Date.now()}-error`,
+                urn: "",
+                postText: "",
+                comment: "",
+                reason: error || "Erreur IA",
+                source: "ai_error",
+                status: "error"
+            }],
+            analyses: candidatePosts.map((post, idx) => ({
+                postIndex: idx + 1,
+                urn: post.urn || "",
+                postText: post.text,
+                pertinent: false,
+                reason: error || "Évaluation impossible (erreur IA)."
+            }))
+        };
     }
 
     const content = data && data.choices && data.choices[0] && data.choices[0].message
         ? data.choices[0].message.content
         : "";
     const parsed = parseJsonSafe(content) || {};
-    const suggestions = Array.isArray(parsed.suggestions) ? parsed.suggestions : [];
-    return suggestions
+    const analysesRaw = Array.isArray(parsed.analyses) ? parsed.analyses : [];
+    const suggestionsRaw = Array.isArray(parsed.suggestions) ? parsed.suggestions : [];
+
+    const analyses = candidatePosts.map((post, idx) => {
+        const analysis = analysesRaw.find(a => Number(a && a.index) === idx + 1) || {};
+        return {
+            postIndex: idx + 1,
+            urn: post.urn || "",
+            postText: post.text,
+            pertinent: Boolean(analysis.pertinent),
+            reason: String(analysis.reason || (analysis.pertinent ? "Post pertinent." : "Post non pertinent.")).trim()
+        };
+    });
+
+    const suggestions = suggestionsRaw
         .map((s, idx) => {
             const postIndex = Number(s.index) - 1;
             const linkedPost = candidatePosts[postIndex];
@@ -273,36 +337,84 @@ const generateCommentSuggestions = async (target, posts, objectives) => {
                 urn: linkedPost.urn || "",
                 postText: linkedPost.text,
                 comment: String(s.comment).trim(),
-                reason: String(s.reason || "").trim(),
+                reason: String(s.reason || "Commentaire généré car post jugé pertinent.").trim(),
                 source: "ai",
                 status: "draft"
             };
         })
         .filter(Boolean)
         .slice(0, 5);
+
+    return { suggestions, analyses };
 };
 
-const connectToProfile = async (profileUrl) => {
+const buildPersonalizedHookMessage = async (target) => {
+    const safeTarget = target || {};
+    const persona = await getPersona();
+    const recentPosts = safeTarget && safeTarget.pendingComments && Array.isArray(safeTarget.pendingComments.posts)
+        ? safeTarget.pendingComments.posts.slice(0, 2).map(p => p && p.text ? p.text.slice(0, 180) : "").filter(Boolean)
+        : [];
+
+    const fallbackMessage = `Bonjour ${safeTarget.fullName || ""}, j’ai beaucoup apprécié votre approche sur ${safeTarget.headline || "vos sujets LinkedIn"}. Au plaisir d’échanger avec vous.`;
+    const { ok, data } = await fetchOpenAI({
+        model: "gpt-4o",
+        messages: [{
+            role: "user",
+            content: `Rédige un message de connexion LinkedIn ultra personnalisé (français, max 280 caractères).
+Persona client: ${persona || "non précisée"}
+Nom cible: ${safeTarget.fullName || ""}
+Description cible: ${safeTarget.headline || ""}
+Catégorie: ${safeTarget.category || ""}
+Extraits de posts cible: ${recentPosts.join(" | ") || "N/A"}
+Contraintes: concret, crédible, pas de formule creuse, pas d'émoji.`
+        }],
+        temperature: 0.35
+    });
+
+    if (!ok || !data || !data.choices || !data.choices[0] || !data.choices[0].message) {
+        return { message: fallbackMessage, source: "fallback" };
+    }
+    const generated = clean(data.choices[0].message.content || "");
+    return {
+        message: generated || fallbackMessage,
+        source: generated ? "ai" : "fallback"
+    };
+};
+
+const connectToProfile = async (profileUrl, message) => {
     if (!profileUrl) return { success: false, error: "URL profil manquante." };
-    const tabId = await new Promise(resolve => {
-        chrome.tabs.create({ url: profileUrl, active: false }, tab => resolve(tab.id));
-    });
-    const waitForTabComplete = () => new Promise(resolve => {
-        const onUpdated = (updatedTabId, info) => {
-            if (updatedTabId === tabId && info.status === "complete") {
-                chrome.tabs.onUpdated.removeListener(onUpdated);
-                resolve();
-            }
-        };
-        chrome.tabs.onUpdated.addListener(onUpdated);
-    });
-    await waitForTabComplete();
-    await chrome.scripting.executeScript({ target: { tabId }, files: CONTENT_SCRIPT_FILES });
-    const result = await new Promise(resolve => {
-        chrome.tabs.sendMessage(tabId, { action: "CONNECT_PROFILE" }, resolve);
-    });
-    chrome.tabs.remove(tabId);
-    return result || { success: false, error: "Connexion non exécutée." };
+    let tabId = null;
+    try {
+        tabId = await new Promise((resolve, reject) => {
+            chrome.tabs.create({ url: profileUrl, active: true }, (tab) => {
+                const createError = chrome.runtime && chrome.runtime.lastError ? chrome.runtime.lastError.message : "";
+                if (createError || !tab || typeof tab.id !== "number") { reject(new Error(createError || "Impossible de créer un onglet.")); return; }
+                resolve(tab.id);
+            });
+        });
+        await waitTabComplete(tabId, 20000);
+        await chrome.scripting.executeScript({ target: { tabId }, files: CONTENT_SCRIPT_FILES });
+        const result = await new Promise(resolve => {
+            chrome.tabs.sendMessage(tabId, { action: "CONNECT_PROFILE", message }, (response) => {
+                const runtimeError = chrome.runtime && chrome.runtime.lastError
+                    ? chrome.runtime.lastError.message
+                    : "";
+                if (runtimeError) {
+                    resolve({ success: false, error: runtimeError });
+                    return;
+                }
+                resolve(response || { success: false, error: "Connexion non exécutée." });
+            });
+        });
+        return result;
+    } catch (error) {
+        const errorMessage = error && error.message ? error.message : "Connexion non exécutée.";
+        return { success: false, error: errorMessage };
+    } finally {
+        if (typeof tabId === "number") {
+            chrome.tabs.update(tabId, { active: false }, () => void chrome.runtime.lastError);
+        }
+    }
 };
 
 const createInactiveTab = (url) => new Promise((resolve, reject) => {
@@ -341,29 +453,79 @@ const waitTabComplete = (tabId, timeoutMs) => new Promise((resolve, reject) => {
 
 const publishSuggestionsForTarget = async ({ tabId, target, suggestions }) => {
     const profileUrl = target && target.profileUrl ? target.profileUrl : "";
+    const sourceSuggestions = Array.isArray(suggestions) ? suggestions : [];
+    const attempted = sourceSuggestions.length;
+    const updatedSuggestions = [];
+    let posted = 0;
+
+    const buildPendingComments = () => ({
+        ...(target.pendingComments || {}),
+        profileUrl,
+        suggestions: updatedSuggestions,
+        lastPublishedAt: Date.now()
+    });
+
+    const failRemainingSuggestions = (errorMessage) => {
+        while (updatedSuggestions.length < sourceSuggestions.length) {
+            const suggestion = sourceSuggestions[updatedSuggestions.length];
+            if (suggestion && (suggestion.status || "draft") === "published") {
+                updatedSuggestions.push(suggestion);
+                continue;
+            }
+            updatedSuggestions.push({
+                ...suggestion,
+                status: "error",
+                error: errorMessage || "Échec de publication LinkedIn."
+            });
+        }
+    };
+
     console.log("[PUBLISH_FOLLOWED_SCAN] publishSuggestionsForTarget:start", {
         tabId,
         profileUrl,
-        suggestionsCount: Array.isArray(suggestions) ? suggestions.length : 0
+        suggestionsCount: sourceSuggestions.length
     });
     if (!profileUrl) {
         console.warn("[PUBLISH_FOLLOWED_SCAN] publishSuggestionsForTarget:missing_profile_url");
-        return { success: false, posted: 0, attempted: 0, error: "URL profil manquante." };
+        failRemainingSuggestions("URL profil manquante.");
+        return {
+            success: false,
+            posted,
+            attempted,
+            error: "URL profil manquante.",
+            pendingComments: buildPendingComments()
+        };
     }
-    const activityUrl = profileUrl.endsWith("/")
-        ? `${profileUrl}recent-activity/all/`
-        : `${profileUrl}/recent-activity/all/`;
-    console.log("[PUBLISH_FOLLOWED_SCAN] publishSuggestionsForTarget:navigate", { activityUrl });
-    await chrome.tabs.update(tabId, { url: activityUrl });
-    await waitTabComplete(tabId, 20000);
-    console.log("[PUBLISH_FOLLOWED_SCAN] publishSuggestionsForTarget:tab_complete", { profileUrl });
-    await chrome.scripting.executeScript({ target: { tabId }, files: CONTENT_SCRIPT_FILES });
-    console.log("[PUBLISH_FOLLOWED_SCAN] publishSuggestionsForTarget:script_injected", { profileUrl });
+    try {
+        const activityUrl = profileUrl.endsWith("/")
+            ? `${profileUrl}recent-activity/all/`
+            : `${profileUrl}/recent-activity/all/`;
+        console.log("[PUBLISH_FOLLOWED_SCAN] publishSuggestionsForTarget:navigate", { activityUrl });
+        await chrome.tabs.update(tabId, { url: activityUrl });
+        await waitTabComplete(tabId, 20000);
+        console.log("[PUBLISH_FOLLOWED_SCAN] publishSuggestionsForTarget:tab_complete", { profileUrl });
+        await chrome.scripting.executeScript({ target: { tabId }, files: CONTENT_SCRIPT_FILES });
+        console.log("[PUBLISH_FOLLOWED_SCAN] publishSuggestionsForTarget:script_injected", { profileUrl });
+    } catch (navigationError) {
+        const errorMessage = navigationError && navigationError.message
+            ? navigationError.message
+            : "Navigation ou injection impossible.";
+        console.error("[PUBLISH_FOLLOWED_SCAN] publishSuggestionsForTarget:navigation_failed", {
+            profileUrl,
+            errorMessage,
+            navigationError
+        });
+        failRemainingSuggestions(errorMessage);
+        return {
+            success: false,
+            posted,
+            attempted,
+            error: errorMessage,
+            pendingComments: buildPendingComments()
+        };
+    }
 
-    let posted = 0;
-    const attempted = suggestions.length;
-    const updatedSuggestions = [];
-    for (const suggestion of suggestions) {
+    for (const suggestion of sourceSuggestions) {
         const status = suggestion && suggestion.status ? suggestion.status : "draft";
         console.log("[PUBLISH_FOLLOWED_SCAN] publishSuggestionsForTarget:suggestion", {
             profileUrl,
@@ -378,25 +540,38 @@ const publishSuggestionsForTarget = async ({ tabId, target, suggestions }) => {
             updatedSuggestions.push({ ...suggestion, status: "error", error: "Suggestion incomplète." });
             continue;
         }
-        const publishResult = await new Promise(resolve => {
-            chrome.tabs.sendMessage(tabId, {
-                action: "COMMENT_ON_FEED_POST_BY_URN",
-                targetURN: suggestion.urn,
-                text: suggestion.comment
-            }, resolve);
-        });
+        try {
+            const publishResult = await new Promise(resolve => {
+                chrome.tabs.sendMessage(tabId, {
+                    action: "COMMENT_ON_FEED_POST_BY_URN",
+                    targetURN: suggestion.urn,
+                    text: suggestion.comment
+                }, resolve);
+            });
 
-        if (publishResult && publishResult.success) {
-            console.log("[PUBLISH_FOLLOWED_SCAN] publishSuggestionsForTarget:publish_success", { profileUrl, urn: suggestion.urn });
-            posted += 1;
-            updatedSuggestions.push({ ...suggestion, status: "published", publishedAt: Date.now() });
-        } else {
-            console.warn("[PUBLISH_FOLLOWED_SCAN] publishSuggestionsForTarget:publish_failed", {
+            if (publishResult && publishResult.success) {
+                console.log("[PUBLISH_FOLLOWED_SCAN] publishSuggestionsForTarget:publish_success", { profileUrl, urn: suggestion.urn });
+                posted += 1;
+                updatedSuggestions.push({ ...suggestion, status: "published", publishedAt: Date.now() });
+            } else {
+                console.warn("[PUBLISH_FOLLOWED_SCAN] publishSuggestionsForTarget:publish_failed", {
+                    profileUrl,
+                    urn: suggestion.urn,
+                    publishResult
+                });
+                updatedSuggestions.push({ ...suggestion, status: "error", error: "Échec de publication LinkedIn." });
+            }
+        } catch (publishError) {
+            const errorMessage = publishError && publishError.message
+                ? publishError.message
+                : "Échec de publication LinkedIn.";
+            console.warn("[PUBLISH_FOLLOWED_SCAN] publishSuggestionsForTarget:publish_exception", {
                 profileUrl,
                 urn: suggestion.urn,
-                publishResult
+                errorMessage,
+                publishError
             });
-            updatedSuggestions.push({ ...suggestion, status: "error", error: "Échec de publication LinkedIn." });
+            updatedSuggestions.push({ ...suggestion, status: "error", error: errorMessage });
         }
         await new Promise(r => setTimeout(r, 1200));
     }
@@ -407,14 +582,42 @@ const publishSuggestionsForTarget = async ({ tabId, target, suggestions }) => {
         success: posted > 0,
         posted,
         attempted,
-        pendingComments: {
-            ...(target.pendingComments || {}),
-            profileUrl,
-            suggestions: updatedSuggestions,
-            lastPublishedAt: Date.now()
-        }
+        pendingComments: buildPendingComments()
     };
 };
+
+
+const openDashboardPanel = ({ tabId, windowId }) => new Promise((resolve, reject) => {
+    if (!sidePanelApi) {
+        reject(new Error("API side panel indisponible."));
+        return;
+    }
+
+    const setOptionsPayload = { path: "dashboard.html", enabled: true };
+    if (typeof tabId === "number") setOptionsPayload.tabId = tabId;
+
+    sidePanelApi.setOptions(setOptionsPayload, () => {
+        const setOptionsError = chrome.runtime && chrome.runtime.lastError
+            ? chrome.runtime.lastError.message
+            : "";
+        if (setOptionsError) {
+            reject(new Error(setOptionsError));
+            return;
+        }
+
+        const openPayload = typeof tabId === "number" ? { tabId } : { windowId };
+        sidePanelApi.open(openPayload, () => {
+            const openError = chrome.runtime && chrome.runtime.lastError
+                ? chrome.runtime.lastError.message
+                : "";
+            if (openError) {
+                reject(new Error(openError));
+                return;
+            }
+            resolve({ success: true });
+        });
+    });
+});
 
 const runHunter = async ({ url, category, settings, consentGiven }) => {
     const hasConsent = await ensureConsent(consentGiven);
@@ -539,9 +742,20 @@ const runHunter = async ({ url, category, settings, consentGiven }) => {
     await setRejected(rejected.concat(newRejected));
     chrome.tabs.remove(tabId);
 
+    let connected = 0;
+    const connectionErrors = [];
     if (settings.autoConnect) {
         for (const target of cappedTargets) {
-            await connectToProfile(target.profileUrl);
+            const hook = await buildPersonalizedHookMessage(target);
+            const connectResult = await connectToProfile(target.profileUrl, hook.message);
+            if (connectResult && connectResult.success) {
+                connected += 1;
+            } else {
+                connectionErrors.push({
+                    profileUrl: target.profileUrl,
+                    error: connectResult && connectResult.error ? connectResult.error : "Connexion échouée"
+                });
+            }
             const delayMs = 2000 + Math.floor(Math.random() * 3000);
             await new Promise(r => setTimeout(r, delayMs));
         }
@@ -551,6 +765,8 @@ const runHunter = async ({ url, category, settings, consentGiven }) => {
         success: true,
         added: cappedTargets.length,
         rejected: newRejected.length,
+        connected,
+        connectionErrors,
         candidates: filteredCandidates
     };
 };
@@ -691,13 +907,37 @@ if (runtimeApi && runtimeApi.onMessage) runtimeApi.onMessage.addListener((reques
               commentsSummary: []
           }));
           await setTargets(targets.concat(additions));
-          sendResponse({ success: true, added: additions.length });
+
+          let connected = 0;
+          const connectionErrors = [];
+          if (request.autoConnect) {
+              for (const target of additions) {
+                  const hook = await buildPersonalizedHookMessage(target);
+                  const connectResult = await connectToProfile(target.profileUrl, hook.message);
+                  if (connectResult && connectResult.success) {
+                      connected += 1;
+                  } else {
+                      connectionErrors.push({
+                          profileUrl: target.profileUrl,
+                          error: connectResult && connectResult.error ? connectResult.error : "Connexion échouée"
+                      });
+                  }
+                  await new Promise(r => setTimeout(r, 1400));
+              }
+          }
+
+          sendResponse({
+              success: true,
+              added: additions.length,
+              connected,
+              connectionErrors
+          });
       })();
       return true;
   }
   if (request.action === "CONNECT_TARGET") {
       (async () => {
-          const response = await connectToProfile(request.profileUrl);
+          const response = await connectToProfile(request.profileUrl, request.message);
           sendResponse(response);
       })();
       return true;
@@ -762,7 +1002,9 @@ if (runtimeApi && runtimeApi.onMessage) runtimeApi.onMessage.addListener((reques
                   });
                   if (scanResult && scanResult.success && Array.isArray(scanResult.posts)) {
                       totalPosts += scanResult.posts.length;
-                      const commentSuggestions = await generateCommentSuggestions(target, scanResult.posts, request.objectives || "");
+                      const commentResult = await generateCommentSuggestions(target, scanResult.posts, request.objectives || "");
+                      const commentSuggestions = Array.isArray(commentResult.suggestions) ? commentResult.suggestions : [];
+                      const analyses = Array.isArray(commentResult.analyses) ? commentResult.analyses : [];
                       console.log("[START_FOLLOWED_SCAN] suggestions_generated", {
                           profileUrl: target.profileUrl,
                           suggestionsCount: commentSuggestions.length
@@ -772,6 +1014,7 @@ if (runtimeApi && runtimeApi.onMessage) runtimeApi.onMessage.addListener((reques
                           profileUrl: target.profileUrl,
                           posts: scanResult.posts,
                           suggestions: commentSuggestions,
+                          analyses,
                           scannedAt: Date.now()
                       });
                   } else {
@@ -908,6 +1151,32 @@ if (runtimeApi && runtimeApi.onMessage) runtimeApi.onMessage.addListener((reques
       })();
       return true;
   }
+  if (request.action === "LOCK_DASHBOARD_PANEL") {
+      (async () => {
+          try {
+              let tabId = request && typeof request.tabId === "number" ? request.tabId : null;
+              let windowId = request && typeof request.windowId === "number" ? request.windowId : null;
+
+              if (tabId === null) {
+                  const activeTab = await new Promise(resolve => {
+                      chrome.tabs.query({ active: true, lastFocusedWindow: true }, tabs => {
+                          resolve(Array.isArray(tabs) && tabs.length ? tabs[0] : null);
+                      });
+                  });
+                  if (activeTab && typeof activeTab.id === "number") tabId = activeTab.id;
+                  if (activeTab && typeof activeTab.windowId === "number") windowId = activeTab.windowId;
+              }
+
+              await openDashboardPanel({ tabId, windowId });
+              sendResponse({ success: true });
+          } catch (error) {
+              const errorMessage = error && error.message ? error.message : "Impossible de verrouiller le panneau.";
+              console.error("[DASHBOARD_PANEL] lock_failed", { errorMessage, error });
+              sendResponse({ success: false, error: errorMessage });
+          }
+      })();
+      return true;
+  }
   if (request.action === "GENERATE_HOOK_MESSAGE") {
       (async () => {
           const targets = await getTargets();
@@ -916,8 +1185,9 @@ if (runtimeApi && runtimeApi.onMessage) runtimeApi.onMessage.addListener((reques
               sendResponse({ success: false, error: "Profil introuvable." });
               return;
           }
-          const message = `Bonjour ${target.fullName || ""}, j’ai apprécié vos contenus sur ${target.headline || "LinkedIn"}.`;
-          sendResponse({ success: true, message });
+
+          const hook = await buildPersonalizedHookMessage(target);
+          sendResponse({ success: true, message: hook.message, source: hook.source });
       })();
       return true;
   }
