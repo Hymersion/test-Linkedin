@@ -903,7 +903,13 @@ const initDashboard = () => {
             HUNTER_LAST_CANDIDATES = response.candidates || [];
             renderHunterCandidates(HUNTER_LAST_CANDIDATES);
             loadTargets();
-            setHunterStatus(`Chasse terminée: ${response.added || 0} ajoutés, ${response.rejected || 0} rejetés.`);
+            const connected = Number(response.connected || 0);
+            const failed = Array.isArray(response.connectionErrors) ? response.connectionErrors.length : 0;
+            const autoConnectEnabled = Boolean(payload.settings && payload.settings.autoConnect);
+            const autoConnectSuffix = autoConnectEnabled
+                ? ` Connexions envoyées: ${connected}${failed ? `, échecs: ${failed}` : ""}.`
+                : "";
+            setHunterStatus(`Chasse terminée: ${response.added || 0} ajoutés, ${response.rejected || 0} rejetés.${autoConnectSuffix}`);
         });
     };
 
@@ -953,13 +959,25 @@ const initDashboard = () => {
                 setHunterStatus("Fonctionnalité indisponible hors extension.", true);
                 return;
             }
-            chrome.runtime.sendMessage({ action: "ADD_TARGETS", candidates: selected }, response => {
+            const settings = saveHunterSettings();
+            chrome.runtime.sendMessage({
+                action: "ADD_TARGETS",
+                candidates: selected,
+                autoConnect: Boolean(settings && settings.autoConnect)
+            }, response => {
                 if (!response || !response.success) {
                     setHunterStatus("Erreur lors de l'ajout des cibles.", true);
                     return;
                 }
                 loadTargets();
-                setHunterStatus(`Cibles ajoutées: ${response.added}.`);
+                const connected = Number(response.connected || 0);
+                const added = Number(response.added || 0);
+                const failed = Array.isArray(response.connectionErrors) ? response.connectionErrors.length : 0;
+                if (Boolean(settings && settings.autoConnect)) {
+                    setHunterStatus(`Cibles ajoutées: ${added}. Connexions envoyées: ${connected}${failed ? `, échecs: ${failed}` : ""}.`);
+                    return;
+                }
+                setHunterStatus(`Cibles ajoutées: ${added}.`);
             });
         });
     }

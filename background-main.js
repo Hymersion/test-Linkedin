@@ -285,25 +285,32 @@ const generateCommentSuggestions = async (target, posts, objectives) => {
 
 const connectToProfile = async (profileUrl) => {
     if (!profileUrl) return { success: false, error: "URL profil manquante." };
-    const tabId = await new Promise(resolve => {
-        chrome.tabs.create({ url: profileUrl, active: false }, tab => resolve(tab.id));
-    });
-    const waitForTabComplete = () => new Promise(resolve => {
-        const onUpdated = (updatedTabId, info) => {
-            if (updatedTabId === tabId && info.status === "complete") {
-                chrome.tabs.onUpdated.removeListener(onUpdated);
-                resolve();
-            }
-        };
-        chrome.tabs.onUpdated.addListener(onUpdated);
-    });
-    await waitForTabComplete();
-    await chrome.scripting.executeScript({ target: { tabId }, files: CONTENT_SCRIPT_FILES });
-    const result = await new Promise(resolve => {
-        chrome.tabs.sendMessage(tabId, { action: "CONNECT_PROFILE" }, resolve);
-    });
-    chrome.tabs.remove(tabId);
-    return result || { success: false, error: "Connexion non exécutée." };
+    let tabId = null;
+    try {
+        tabId = await createInactiveTab(profileUrl);
+        await waitTabComplete(tabId, 20000);
+        await chrome.scripting.executeScript({ target: { tabId }, files: CONTENT_SCRIPT_FILES });
+        const result = await new Promise(resolve => {
+            chrome.tabs.sendMessage(tabId, { action: "CONNECT_PROFILE" }, (response) => {
+                const runtimeError = chrome.runtime && chrome.runtime.lastError
+                    ? chrome.runtime.lastError.message
+                    : "";
+                if (runtimeError) {
+                    resolve({ success: false, error: runtimeError });
+                    return;
+                }
+                resolve(response || { success: false, error: "Connexion non exécutée." });
+            });
+        });
+        return result;
+    } catch (error) {
+        const errorMessage = error && error.message ? error.message : "Connexion non exécutée.";
+        return { success: false, error: errorMessage };
+    } finally {
+        if (typeof tabId === "number") {
+            chrome.tabs.remove(tabId, () => void chrome.runtime.lastError);
+        }
+    }
 };
 
 const createInactiveTab = (url) => new Promise((resolve, reject) => {
@@ -631,9 +638,19 @@ const runHunter = async ({ url, category, settings, consentGiven }) => {
     await setRejected(rejected.concat(newRejected));
     chrome.tabs.remove(tabId);
 
+    let connected = 0;
+    const connectionErrors = [];
     if (settings.autoConnect) {
         for (const target of cappedTargets) {
-            await connectToProfile(target.profileUrl);
+            const connectResult = await connectToProfile(target.profileUrl);
+            if (connectResult && connectResult.success) {
+                connected += 1;
+            } else {
+                connectionErrors.push({
+                    profileUrl: target.profileUrl,
+                    error: connectResult && connectResult.error ? connectResult.error : "Connexion échouée"
+                });
+            }
             const delayMs = 2000 + Math.floor(Math.random() * 3000);
             await new Promise(r => setTimeout(r, delayMs));
         }
@@ -643,6 +660,8 @@ const runHunter = async ({ url, category, settings, consentGiven }) => {
         success: true,
         added: cappedTargets.length,
         rejected: newRejected.length,
+        connected,
+        connectionErrors,
         candidates: filteredCandidates
     };
 };
@@ -783,7 +802,30 @@ if (runtimeApi && runtimeApi.onMessage) runtimeApi.onMessage.addListener((reques
               commentsSummary: []
           }));
           await setTargets(targets.concat(additions));
-          sendResponse({ success: true, added: additions.length });
+
+          let connected = 0;
+          const connectionErrors = [];
+          if (request.autoConnect) {
+              for (const target of additions) {
+                  const connectResult = await connectToProfile(target.profileUrl);
+                  if (connectResult && connectResult.success) {
+                      connected += 1;
+                  } else {
+                      connectionErrors.push({
+                          profileUrl: target.profileUrl,
+                          error: connectResult && connectResult.error ? connectResult.error : "Connexion échouée"
+                      });
+                  }
+                  await new Promise(r => setTimeout(r, 1400));
+              }
+          }
+
+          sendResponse({
+              success: true,
+              added: additions.length,
+              connected,
+              connectionErrors
+          });
       })();
       return true;
   }
@@ -1034,8 +1076,26 @@ if (runtimeApi && runtimeApi.onMessage) runtimeApi.onMessage.addListener((reques
               sendResponse({ success: false, error: "Profil introuvable." });
               return;
           }
-          const message = `Bonjour ${target.fullName || ""}, j’ai apprécié vos contenus sur ${target.headline || "LinkedIn"}.`;
-          sendResponse({ success: true, message });
+
+          const fallbackMessage = `Bonjour ${target.fullName || ""}, j’ai apprécié vos contenus sur ${target.headline || "LinkedIn"}. Ravi d’échanger avec vous.`;
+          const { ok, data } = await fetchOpenAI({
+              model: "gpt-4o",
+              messages: [{
+                  role: "user",
+                  content: `Rédige un message de connexion LinkedIn personnalisé en français, naturel et court (max 280 caractères).
+Nom: ${target.fullName || ""}
+Headline: ${target.headline || ""}
+Contrainte: pas de formule générique vide, pas d'émoji, ton pro amical.`
+              }],
+              temperature: 0.5
+          });
+
+          if (!ok || !data || !data.choices || !data.choices[0] || !data.choices[0].message) {
+              sendResponse({ success: true, message: fallbackMessage, source: "fallback" });
+              return;
+          }
+          const message = clean(data.choices[0].message.content || "") || fallbackMessage;
+          sendResponse({ success: true, message, source: "ai" });
       })();
       return true;
   }
