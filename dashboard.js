@@ -48,6 +48,8 @@ const initDashboard = () => {
     const autoScheduleDaily = document.getElementById('auto_schedule_daily');
     const autoScheduleWeekly = document.getElementById('auto_schedule_weekly');
     const autoTargetsStart = document.getElementById('btn_auto_targets_start');
+    const autoFollowedPreview = document.getElementById('btn_auto_followed_preview');
+    const autoFollowedPublish = document.getElementById('btn_auto_followed_publish');
     const autoScheduleTimeButtons = document.querySelectorAll('[data-time]');
     const autoScheduleDayButtons = document.querySelectorAll('[data-day]');
     const autoScheduleEvery = document.getElementById('auto_schedule_every');
@@ -374,6 +376,20 @@ const initDashboard = () => {
             const days = Array.from(scheduleState.days).join(', ') || 'tous';
             const cadence = `tous les ${scheduleState.everyDays} jours à ${scheduleState.time}`;
             setHunterStatus(`Planification: ${category} • ${cadence} • ${scheduleState.frequency} • ${days}`);
+        });
+    }
+
+    if (autoFollowedPreview) {
+        autoFollowedPreview.addEventListener('click', () => {
+            const category = autoTargetsCategorySelect ? autoTargetsCategorySelect.value : 'all';
+            setHunterStatus(`Test de scan en cours pour: ${category}`);
+        });
+    }
+
+    if (autoFollowedPublish) {
+        autoFollowedPublish.addEventListener('click', () => {
+            const category = autoTargetsCategorySelect ? autoTargetsCategorySelect.value : 'all';
+            setHunterStatus(`Publication des commentaires sélectionnés pour: ${category}`);
         });
     }
 
