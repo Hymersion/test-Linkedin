@@ -481,8 +481,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           const payload = filtered.slice(0, 10);
           let totalPosts = 0;
           for (const target of payload) {
+              const activityUrl = target.profileUrl.endsWith("/")
+                  ? `${target.profileUrl}recent-activity/all/`
+                  : `${target.profileUrl}/recent-activity/all/`;
               const tabId = await new Promise(resolve => {
-                  chrome.tabs.create({ url: target.profileUrl, active: false }, tab => resolve(tab.id));
+                  chrome.tabs.create({ url: activityUrl, active: false }, tab => resolve(tab.id));
               });
               const waitForTabComplete = () => new Promise(resolve => {
                   const onUpdated = (updatedTabId, info) => {

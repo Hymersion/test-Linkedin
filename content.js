@@ -109,6 +109,18 @@ if (!window.ghostlyLoaded) {
         return posts;
     };
 
+    const scrollAndCollect = async (limit = 10) => {
+        let posts = collectRecentPosts(limit);
+        let attempts = 0;
+        while (posts.length < limit && attempts < 4) {
+            window.scrollBy(0, 800);
+            await new Promise(r => setTimeout(r, 1200));
+            posts = collectRecentPosts(limit);
+            attempts += 1;
+        }
+        return posts;
+    };
+
     chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         
         // --- 1. SCAN FEED (RADAR ATOMIQUE) ---
@@ -452,7 +464,7 @@ if (!window.ghostlyLoaded) {
                     sendResponse({ success: false, error: "Veuillez vous connecter à LinkedIn." });
                     return;
                 }
-                const posts = collectRecentPosts(10);
+                const posts = await scrollAndCollect(10);
                 sendResponse({ success: true, posts });
             })();
             return true;
