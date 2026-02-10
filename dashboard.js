@@ -319,7 +319,7 @@ const initDashboard = () => {
                     setHunterStatus("Fonctionnalité indisponible hors extension.", true);
                     return;
                 }
-                chrome.runtime.sendMessage({ action: "GENERATE_HOOK_MESSAGE", profileUrl: url }, response => {
+                chrome.runtime.sendMessage({ action: "GENERATE_HOOK_MESSAGE", profileUrl: url, objectives: autoObjectives ? autoObjectives.value.trim() : "" }, response => {
                     if (!response || !response.success) {
                         setHunterStatus(response && response.error ? response.error : "Génération échouée.", true);
                         return;

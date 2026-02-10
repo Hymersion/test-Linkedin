@@ -346,6 +346,76 @@ const waitTabComplete = (tabId, timeoutMs) => new Promise((resolve, reject) => {
     chrome.tabs.onUpdated.addListener(onUpdated);
 });
 
+
+const getStoredPersona = () => new Promise(resolve => {
+    if (!storageLocalApi) {
+        resolve("Expert LinkedIn B2B");
+        return;
+    }
+    storageLocalApi.get(["persona"], result => {
+        const persona = (result && result.persona ? String(result.persona) : "").trim();
+        resolve(persona || "Expert LinkedIn B2B");
+    });
+});
+
+const scrapeMyProfileContext = async () => {
+    let tabId = null;
+    try {
+        tabId = await createInactiveTab("https://www.linkedin.com/me/");
+        await waitTabComplete(tabId, 20000);
+        await chrome.scripting.executeScript({ target: { tabId }, files: CONTENT_SCRIPT_FILES });
+        const response = await new Promise(resolve => {
+            chrome.tabs.sendMessage(tabId, { action: "SCRAPE_MY_PROFILE" }, resolve);
+        });
+        if (!response || !response.success || !response.data) return null;
+        return response.data;
+    } catch (error) {
+        console.warn("[GENERATE_HOOK_MESSAGE] scrape_my_profile_failed", { error });
+        return null;
+    } finally {
+        if (typeof tabId === "number") {
+            chrome.tabs.remove(tabId, () => void chrome.runtime.lastError);
+        }
+    }
+};
+
+const buildHookFallbackMessage = (target, myProfile, objectives, targetInsights) => {
+    const firstName = (target.fullName || "").trim().split(/\s+/)[0] || "";
+    const greeting = firstName ? `Bonjour ${firstName},` : "Bonjour,";
+    const headline = target.headline || "vos publications";
+    const personalAngle = objectives || (myProfile && myProfile.headline) || "nos objectifs de prospection";
+    const insight = targetInsights || "vos derniers posts et échanges";
+    return `${greeting} j’ai particulièrement apprécié ${headline}. En lien avec ${personalAngle}, votre angle sur ${insight} m’a donné une idée concrète de collaboration. Ouvert à échanger 10 min cette semaine ?`;
+};
+
+const generateHookMessageFromContext = async ({ target, objectives, persona, myProfile, targetInsights }) => {
+    const prompt = [
+        `Persona commerciale: ${persona || "Expert LinkedIn"}`,
+        `Objectifs internes: ${objectives || "non précisés"}`,
+        `Mes infos: ${myProfile ? `${myProfile.name || ""} | ${myProfile.headline || ""} | ${myProfile.about || ""} | ${myProfile.experience || ""}` : "non disponibles"}`,
+        `Cible: ${target.fullName || "Profil"} | ${target.headline || ""}`,
+        `Description/profil cible: ${target.about || target.description || "non disponible"}`,
+        `Signaux cible: ${targetInsights || "non disponible"}`,
+        'Tâche: Génère un message personnalisé de prise de contact LinkedIn en français, naturel, précis, sans ton robotique, 2-4 phrases max, avec une accroche contextualisée et un CTA léger.',
+        'Format JSON strict: {"message":"...","why":"..."}'
+    ].join("\n");
+
+    const { ok, data } = await fetchOpenAI({
+        model: "gpt-4o",
+        messages: [{ role: "user", content: prompt }],
+        temperature: 0.5
+    });
+
+    if (!ok) return null;
+
+    const content = data && data.choices && data.choices[0] && data.choices[0].message
+        ? data.choices[0].message.content
+        : "";
+    const parsed = parseJsonSafe(content);
+    if (!parsed || !parsed.message) return null;
+    return String(parsed.message).trim();
+};
+
 const publishSuggestionsForTarget = async ({ tabId, target, suggestions }) => {
     const profileUrl = target && target.profileUrl ? target.profileUrl : "";
     console.log("[PUBLISH_FOLLOWED_SCAN] publishSuggestionsForTarget:start", {
@@ -932,8 +1002,43 @@ if (runtimeApi && runtimeApi.onMessage) runtimeApi.onMessage.addListener((reques
               sendResponse({ success: false, error: "Profil introuvable." });
               return;
           }
-          const message = `Bonjour ${target.fullName || ""}, j’ai apprécié vos contenus sur ${target.headline || "LinkedIn"}.`;
-          sendResponse({ success: true, message });
+
+          const persona = await getStoredPersona();
+          const objectives = request.objectives || "";
+          const myProfile = await scrapeMyProfileContext();
+          const suggestionSignals = target.pendingComments && Array.isArray(target.pendingComments.suggestions)
+              ? target.pendingComments.suggestions
+                  .slice(0, 3)
+                  .map(s => `${s.postText || ""} | proposition: ${s.comment || ""}`)
+                  .filter(Boolean)
+                  .join(" || ")
+              : "";
+          const targetInsights = [
+              target.commentsSummary && target.commentsSummary.length ? `Commentaires observés: ${target.commentsSummary.join(" ; ")}` : "",
+              suggestionSignals ? `Posts + commentaires suggérés: ${suggestionSignals}` : "",
+              target.headline ? `Headline: ${target.headline}` : ""
+          ].filter(Boolean).join("\n");
+
+          const aiMessage = await generateHookMessageFromContext({
+              target,
+              objectives,
+              persona,
+              myProfile,
+              targetInsights
+          });
+
+          const message = aiMessage || buildHookFallbackMessage(target, myProfile, objectives, targetInsights || target.headline || "son activité");
+
+          sendResponse({
+              success: true,
+              message,
+              source: aiMessage ? "ai" : "fallback",
+              context: {
+                  usedPersona: persona,
+                  usedMyProfile: Boolean(myProfile),
+                  usedTargetInsights: Boolean(targetInsights)
+              }
+          });
       })();
       return true;
   }
