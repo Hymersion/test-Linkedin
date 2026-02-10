@@ -488,7 +488,8 @@ const openDashboardWindow = () => new Promise((resolve, reject) => {
     const createWindow = () => {
         windowsApi.create({
             url: runtimeApi.getURL("dashboard.html"),
-            type: "popup",
+            // Use a normal window so it never behaves like a transient popup that closes on blur.
+            type: "normal",
             focused: true,
             width: 1100,
             height: 780
