@@ -845,13 +845,14 @@ if (runtimeApi && runtimeApi.onMessage) runtimeApi.onMessage.addListener((reques
               let posted = 0;
               let attempted = 0;
               const failedProfiles = [];
-              const byProfileUrl = new Map(targets.map(target => [target.profileUrl, target.pendingComments]));
               let updatedTargets = targets;
 
               for (const target of targetsWithSuggestions) {
                   const suggestions = target.pendingComments.suggestions || [];
+                  const profileKey = target.profileUrl;
+                  let nextPendingComments = target.pendingComments;
                   console.log("[PUBLISH_FOLLOWED_SCAN] processing_target", {
-                      profileUrl: target.profileUrl,
+                      profileUrl: profileKey,
                       fullName: target.fullName || null,
                       suggestionsCount: suggestions.length
                   });
@@ -859,35 +860,43 @@ if (runtimeApi && runtimeApi.onMessage) runtimeApi.onMessage.addListener((reques
                       const publishResult = await publishSuggestionsForTarget({ tabId, target, suggestions });
                       posted += publishResult.posted || 0;
                       attempted += publishResult.attempted || 0;
-                      byProfileUrl.set(target.profileUrl, publishResult.pendingComments || target.pendingComments);
+                      nextPendingComments = publishResult.pendingComments || target.pendingComments;
                       if ((publishResult.posted || 0) === 0) {
                           failedProfiles.push(target.fullName || target.profileUrl || "Profil");
                       }
                   } catch (error) {
                       console.error("[PUBLISH_FOLLOWED_SCAN] target_failed", {
-                          profileUrl: target.profileUrl,
+                          profileUrl: profileKey,
                           errorMessage: error && error.message ? error.message : "Erreur inconnue",
                           error
                       });
                       failedProfiles.push(target.fullName || target.profileUrl || "Profil");
                       attempted += suggestions.length;
-                      byProfileUrl.set(target.profileUrl, target.pendingComments);
                   }
 
-                  updatedTargets = updatedTargets.map(currentTarget => {
-                      if (!byProfileUrl.has(currentTarget.profileUrl)) return currentTarget;
-                      return {
-                          ...currentTarget,
-                          pendingComments: byProfileUrl.get(currentTarget.profileUrl)
-                      };
-                  });
-                  await setTargets(updatedTargets);
-                  console.log("[PUBLISH_FOLLOWED_SCAN] target_persisted", {
-                      profileUrl: target.profileUrl,
-                      posted,
-                      attempted,
-                      failedProfilesCount: failedProfiles.length
-                  });
+                  try {
+                      updatedTargets = updatedTargets.map(currentTarget => {
+                          if (currentTarget.profileUrl !== profileKey) return currentTarget;
+                          return {
+                              ...currentTarget,
+                              pendingComments: nextPendingComments
+                          };
+                      });
+                      await setTargets(updatedTargets);
+                      console.log("[PUBLISH_FOLLOWED_SCAN] target_persisted", {
+                          profileUrl: profileKey,
+                          posted,
+                          attempted,
+                          failedProfilesCount: failedProfiles.length
+                      });
+                  } catch (persistError) {
+                      console.error("[PUBLISH_FOLLOWED_SCAN] target_persist_failed", {
+                          profileUrl: profileKey,
+                          errorMessage: persistError && persistError.message ? persistError.message : "Erreur inconnue",
+                          persistError
+                      });
+                      failedProfiles.push(target.fullName || target.profileUrl || "Profil");
+                  }
               }
 
               const success = posted > 0;
@@ -910,14 +919,47 @@ if (runtimeApi && runtimeApi.onMessage) runtimeApi.onMessage.addListener((reques
   }
   if (request.action === "GENERATE_HOOK_MESSAGE") {
       (async () => {
+          const normalizeProfileUrl = (value) => String(value || "").replace(/\/$/, "");
           const targets = await getTargets();
-          const target = targets.find(t => t.profileUrl === request.profileUrl);
+          const requestedUrl = normalizeProfileUrl(request.profileUrl);
+          const target = targets.find(t => normalizeProfileUrl(t.profileUrl) === requestedUrl);
           if (!target) {
               sendResponse({ success: false, error: "Profil introuvable." });
               return;
           }
-          const message = `Bonjour ${target.fullName || ""}, j’ai apprécié vos contenus sur ${target.headline || "LinkedIn"}.`;
-          sendResponse({ success: true, message });
+
+          const fullName = String(target.fullName || "").trim() || "";
+          const firstName = fullName.split(/\s+/).filter(Boolean)[0] || "";
+          const headline = String(target.headline || "LinkedIn").trim() || "LinkedIn";
+          const summary = Array.isArray(target.commentsSummary) ? target.commentsSummary.filter(Boolean).join(', ') : "";
+
+          const fallbackMessage = firstName
+              ? `Bonjour ${firstName}, j’ai lu vos contenus sur ${headline}. J’ai particulièrement aimé ${summary || "votre approche"}. Partant(e) pour échanger 10 min sur vos priorités du moment ?`
+              : `Bonjour, j’ai lu vos contenus sur ${headline} et j’ai apprécié votre approche. Partant(e) pour échanger 10 min sur vos priorités du moment ?`;
+
+          try {
+              const persona = String(request.persona || "Consultant B2B").trim();
+              const prompt = [
+                  `Rédige un message d'accroche LinkedIn personnalisé en français pour une demande de connexion.`,
+                  `Contraintes: 280 caractères max, ton naturel, pas de formule générique, pas d'emoji, pas de hashtags.`,
+                  `Profil cible: nom="${fullName || "N/A"}", titre="${headline}", signaux="${summary || "Aucun"}".`,
+                  `Mon persona: "${persona}".`,
+                  `Retourne uniquement le message final.`
+              ].join("\n");
+
+              const { ok, data, error } = await fetchOpenAI({
+                  model: "gpt-4o",
+                  messages: [{ role: "user", content: prompt }],
+                  temperature: 0.7
+              });
+
+              if (!ok) throw new Error(error || "Erreur IA");
+              const aiMessage = clean(data && data.choices && data.choices[0] && data.choices[0].message ? data.choices[0].message.content : "");
+              if (!aiMessage) throw new Error("EMPTY_HOOK");
+              sendResponse({ success: true, message: aiMessage.slice(0, 280) });
+          } catch (error) {
+              sendResponse({ success: true, message: fallbackMessage, warning: "fallback_used" });
+          }
       })();
       return true;
   }
