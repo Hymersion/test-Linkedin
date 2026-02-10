@@ -494,57 +494,77 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
   if (request.action === "START_FOLLOWED_SCAN") {
       (async () => {
-          const targets = await getTargets();
-          const category = request.category || "all";
-          const filtered = category === "all" ? targets : targets.filter(t => (t.category || "").toLowerCase() === category.toLowerCase());
-          if (!filtered.length) {
-              sendResponse({ success: false, error: "Aucun profil suivi dans cette catégorie." });
-              return;
-          }
-          const limit = Math.max(1, Number(request.testLimit || 10));
-          const payload = filtered.slice(0, limit);
-          let totalPosts = 0;
-          const suggestions = [];
-          for (const target of payload) {
-              const activityUrl = target.profileUrl.endsWith("/")
-                  ? `${target.profileUrl}recent-activity/all/`
-                  : `${target.profileUrl}/recent-activity/all/`;
-                  suggestions.push({
-                      profileUrl: target.profileUrl,
-                      posts: scanResult.posts
+          let tabId = null;
+          try {
+              const targets = await getTargets();
+              const category = request.category || "all";
+              const filtered = category === "all" ? targets : targets.filter(t => (t.category || "").toLowerCase() === category.toLowerCase());
+              if (!filtered.length) {
+                  sendResponse({ success: false, error: "Aucun profil suivi dans cette catégorie." });
+                  return;
+              }
+              const limit = Math.max(1, Number(request.testLimit || 10));
+              const payload = filtered.slice(0, limit);
+              let totalPosts = 0;
+              const suggestions = [];
+              tabId = await new Promise((resolve, reject) => {
+                  chrome.tabs.create({ url: "https://www.linkedin.com/feed/", active: false }, tab => {
+                      if (chrome.runtime.lastError || !tab || typeof tab.id !== "number") {
+                          reject(new Error(chrome.runtime.lastError?.message || "Impossible de créer un onglet de scan."));
+                          return;
+                      }
+                      resolve(tab.id);
                   });
-                  return {
-                      ...t,
-                      lastScanAt: now,
-                      pendingComments: suggestions.find(s => s.profileUrl === t.profileUrl) || null
-                  };
-                  chrome.tabs.create({ url: activityUrl, active: false }, tab => resolve(tab.id));
               });
-              const waitForTabComplete = () => new Promise(resolve => {
+              const waitForTabComplete = () => new Promise((resolve, reject) => {
+                  const timeoutId = setTimeout(() => {
+                      reject(new Error("Délai dépassé pendant le chargement du profil."));
+                  }, 15000);
                   const onUpdated = (updatedTabId, info) => {
                       if (updatedTabId === tabId && info.status === "complete") {
+                          clearTimeout(timeoutId);
                           chrome.tabs.onUpdated.removeListener(onUpdated);
                           resolve();
                       }
                   };
                   chrome.tabs.onUpdated.addListener(onUpdated);
+              for (const target of payload) {
+                  if (!target.profileUrl) continue;
+                  const activityUrl = target.profileUrl.endsWith("/")
+                      ? `${target.profileUrl}recent-activity/all/`
+                      : `${target.profileUrl}/recent-activity/all/`;
+                  await chrome.tabs.update(tabId, { url: activityUrl });
+                  await waitForTabComplete();
+                  await chrome.scripting.executeScript({ target: { tabId }, files: CONTENT_SCRIPT_FILES });
+                  const scanResult = await new Promise(resolve => {
+                      chrome.tabs.sendMessage(tabId, { action: "SCAN_PROFILE_POSTS" }, resolve);
+                  if (scanResult && scanResult.success && Array.isArray(scanResult.posts)) {
+                      totalPosts += scanResult.posts.length;
+                      suggestions.push({
+                          profileUrl: target.profileUrl,
+                          posts: scanResult.posts
+                      });
+                  }
+                  await new Promise(r => setTimeout(r, 1500));
+              const now = Date.now();
+              const updatedTargets = targets.map(t => {
+                  if (payload.find(p => p.profileUrl === t.profileUrl)) {
+                      return {
+                          ...t,
+                          lastScanAt: now,
+                          pendingComments: suggestions.find(s => s.profileUrl === t.profileUrl) || null
+                      };
+                  }
+                  return t;
               });
-              await waitForTabComplete();
-              await chrome.scripting.executeScript({ target: { tabId }, files: CONTENT_SCRIPT_FILES });
-              const scanResult = await new Promise(resolve => {
-                  chrome.tabs.sendMessage(tabId, { action: "SCAN_PROFILE_POSTS" }, resolve);
-              });
-              chrome.tabs.remove(tabId);
-              if (scanResult && scanResult.success && Array.isArray(scanResult.posts)) {
-                  totalPosts += scanResult.posts.length;
-              }
-              await new Promise(r => setTimeout(r, 1500));
+              await setTargets(updatedTargets);
+              sendResponse({ success: true, count: payload.length, message: `Scan terminé: ${payload.length} profils, ${totalPosts} posts détectés.` });
+          } catch (error) {
+              sendResponse({ success: false, error: error?.message || "Erreur pendant le scan des profils suivis." });
+          } finally {
+              if (typeof tabId === "number") {
+                  chrome.tabs.remove(tabId, () => void chrome.runtime.lastError);
           }
-          const now = Date.now();
-          const updatedTargets = targets.map(t => {
-              if (payload.find(p => p.profileUrl === t.profileUrl)) {
-                  return { ...t, lastScanAt: now };
-              }
               return t;
           });
           await setTargets(updatedTargets);
