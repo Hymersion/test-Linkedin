@@ -148,21 +148,130 @@
 <body>
   <div class="sidebar">
     <div class="brand">Ghostly</div>
-    <button class="nav-btn active" id="nav_radar">Radar</button>
-    <button class="nav-btn" id="nav_id">Identité</button>
-    <button class="nav-btn" id="nav_com">Réponses</button>
+    <button class="nav-btn active" id="nav_radar">Auto-commentaire</button>
+    <button class="nav-btn" id="nav_reseau">Radar</button>
     <button class="nav-btn" id="nav_post">Éditeur</button>
     <button class="nav-btn" id="nav_queue">Planning</button>
+    <button class="nav-btn" id="nav_id">Identité</button>
+    <button class="nav-btn" id="nav_com" style="display:none;">Réponses</button>
   </div>
   
   <div class="main">
     <div id="tab_radar" class="tab active">
-        <h3>Radar</h3>
+        <h3>Auto-commentaire</h3>
         <div class="section">
-            <label for="input_scroll">Durée du scan (sec)</label>
-            <input type="number" id="input_scroll" value="20">
-            <button id="btn_scan_radar" class="btn-accent">Lancer Radar</button>
-            <p class="muted">Analyse le fil LinkedIn et propose des réponses prêtes à publier.</p>
+            <div class="row">
+                <button class="btn-secondary" id="auto_tab_feed">Scan mon fil</button>
+                <button class="btn-secondary" id="auto_tab_followed">Scan personnes suivies</button>
+            </div>
+        </div>
+        <div class="section" id="auto_section_quick">
+            <h4>Actions rapides</h4>
+            <div class="row">
+                <div>
+                    <label for="input_scroll">Durée du scan (sec)</label>
+                    <input type="number" id="input_scroll" value="20">
+                    <button id="btn_scan_radar" class="btn-accent">Analyser le fil</button>
+                    <p class="muted">Analyse le fil LinkedIn et propose des réponses prêtes à publier.</p>
+                </div>
+                <div>
+                    <label for="input_url">URL du post</label>
+                    <input id="input_url" placeholder="https://www.linkedin.com/...">
+                    <button id="btn_scan_post">Analyser le post</button>
+                    <p class="muted">L’IA analyse un post précis et propose des commentaires ciblés.</p>
+                </div>
+            </div>
+            <div id="zone_coms"></div>
+            <button id="btn_pub_all" class="btn-success" style="display:none;">Publier Tout</button>
+        </div>
+        <div class="section" id="auto_section_feed">
+            <h4>Auto commentaire du fil + Like</h4>
+            <div class="row">
+                <button class="btn-secondary" type="button" data-feed-frequency="10">10 min</button>
+                <button class="btn-secondary" type="button" data-feed-frequency="30">30 min</button>
+                <button class="btn-secondary" type="button" data-feed-frequency="60">60 min</button>
+            </div>
+            <div class="row">
+                <button class="btn-secondary" type="button" data-feed-day="Lun">Lun</button>
+                <button class="btn-secondary" type="button" data-feed-day="Mar">Mar</button>
+                <button class="btn-secondary" type="button" data-feed-day="Mer">Mer</button>
+                <button class="btn-secondary" type="button" data-feed-day="Jeu">Jeu</button>
+                <button class="btn-secondary" type="button" data-feed-day="Ven">Ven</button>
+            </div>
+            <button class="btn-secondary" id="btn_auto_feed_start">Démarrer</button>
+        </div>
+        <div class="section" id="auto_section_followed">
+            <h4>Auto commentaire des profils suivis</h4>
+            <label for="auto_targets_category_select">Catégorie suivie</label>
+            <select id="auto_targets_category_select">
+                <option value="all">Toutes les catégories</option>
+            </select>
+            <label for="auto_test_limit">Mode test (nb profils)</label>
+            <select id="auto_test_limit">
+                <option value="2">2 profils</option>
+                <option value="3">3 profils</option>
+                <option value="5">5 profils</option>
+                <option value="10">10 profils</option>
+            </select>
+            <label class="muted">Fréquence</label>
+            <div class="row">
+                <button class="btn-secondary" id="auto_schedule_daily" type="button">1x / jour</button>
+                <button class="btn-secondary" id="auto_schedule_weekly" type="button">1x / semaine</button>
+            </div>
+            <label class="muted">Tous les X jours à HH:MM</label>
+            <div class="row">
+                <select id="auto_schedule_every">
+                    <option value="1">1 jour</option>
+                    <option value="2">2 jours</option>
+                    <option value="3">3 jours</option>
+                    <option value="5">5 jours</option>
+                    <option value="7">7 jours</option>
+                </select>
+                <select id="auto_schedule_time_select">
+                    <option value="08:00">08:00</option>
+                    <option value="10:00">10:00</option>
+                    <option value="12:00">12:00</option>
+                    <option value="15:00">15:00</option>
+                    <option value="18:00">18:00</option>
+                </select>
+            </div>
+            <div class="row">
+                <div>
+                    <label class="muted">Heure</label>
+                    <div class="row">
+                        <button class="btn-secondary" type="button" data-time="08:00">08:00</button>
+                        <button class="btn-secondary" type="button" data-time="10:00">10:00</button>
+                        <button class="btn-secondary" type="button" data-time="12:00">12:00</button>
+                        <button class="btn-secondary" type="button" data-time="15:00">15:00</button>
+                        <button class="btn-secondary" type="button" data-time="18:00">18:00</button>
+                    </div>
+                </div>
+                <div>
+                    <label class="muted">Jours</label>
+                    <div class="row">
+                        <button class="btn-secondary" type="button" data-day="Lun">Lun</button>
+                        <button class="btn-secondary" type="button" data-day="Mar">Mar</button>
+                        <button class="btn-secondary" type="button" data-day="Mer">Mer</button>
+                        <button class="btn-secondary" type="button" data-day="Jeu">Jeu</button>
+                        <button class="btn-secondary" type="button" data-day="Ven">Ven</button>
+                    </div>
+                </div>
+            </div>
+            <p class="muted">Choisissez “tous les X jours à HH:MM”, ou un rythme quotidien/hebdo.</p>
+            <label for="auto_objectives">Objectifs client</label>
+            <textarea id="auto_objectives" style="height:100px;" placeholder="Ex: détecter des opportunités B2B, ton professionnel, prioriser les leads qualifiés."></textarea>
+            <div class="row">
+                <button class="btn-secondary" id="btn_auto_followed_preview">Tester le scan</button>
+                <button class="btn-success" id="btn_auto_followed_publish">Publier sélection</button>
+            </div>
+        </div>
+        <div class="section" id="auto_section_verify">
+            <h4>Validation des commentaires</h4>
+            <div id="auto_comment_preview"></div>
+            <div class="row">
+                <button class="btn-secondary" id="btn_auto_comment_verify">Vérifier</button>
+                <button class="btn-success" id="btn_auto_comment_publish">Publier sélection</button>
+            </div>
         </div>
         <div id="zone_radar" class="section" style="display:none;">
             <div id="list_radar"></div>
@@ -177,17 +286,14 @@
             <textarea id="prompt_box" style="height:120px;"></textarea>
             <button id="btn_save">Sauver</button>
         </div>
-    </div>
-    <div id="tab_com" class="tab">
-        <h3>Post Unique</h3>
         <div class="section">
-            <label for="input_url">URL du post</label>
-            <input id="input_url" placeholder="https://www.linkedin.com/...">
-            <button id="btn_scan_post">Scanner le post</button>
-            <div id="zone_coms"></div>
-            <button id="btn_pub_all" class="btn-success" style="display:none;">Publier Tout</button>
+            <label for="input_api_key">Clé OpenAI</label>
+            <input id="input_api_key" type="password" placeholder="sk-..." autocomplete="off">
+            <p class="muted">Clé stockée localement (sync si disponible) pour activer les fonctionnalités IA.</p>
+            <button id="btn_save_api_key" class="btn-secondary">Sauver la clé</button>
         </div>
     </div>
+    <div id="tab_com" class="tab" style="display:none;"></div>
     <div id="tab_post" class="tab">
         <h3>Éditeur</h3>
         <div class="section">
@@ -202,6 +308,68 @@
             <button id="btn_pub_now" class="btn-danger">Publier Maintenant</button>
         </div>
     </div>
+    <div id="tab_reseau" class="tab">
+        <h3>Radar</h3>
+        <div class="section">
+            <div class="row">
+                <button class="btn-secondary" id="radar_tab_settings">Paramétrage radar</button>
+                <button class="btn-secondary" id="radar_tab_targets">Gérer mes suivis</button>
+            </div>
+        </div>
+        <div class="section" id="radar_section_hunt">
+            <h4>Chasse intelligente</h4>
+            <label for="hunter_keyword">Mot-clé principal</label>
+            <input id="hunter_keyword" placeholder="ex: médecin, business angel">
+            <label for="hunter_custom_query">Requête personnalisée</label>
+            <input id="hunter_custom_query" placeholder="ex: freelance marketing paris">
+            <label for="hunter_location">Lieu</label>
+            <input id="hunter_location" placeholder="ex: Paris">
+            <label for="hunter_language">Langue</label>
+            <input id="hunter_language" placeholder="ex: Français">
+            <label for="hunter_include">Mots-clés à inclure</label>
+            <input id="hunter_include" placeholder="ex: growth, B2B">
+            <label for="hunter_exclude">Mots-clés à exclure</label>
+            <input id="hunter_exclude" placeholder="ex: stagiaire">
+            <label for="hunter_max">Profils max / session</label>
+            <input id="hunter_max" type="number" min="1" max="100" value="30">
+            <label for="hunter_max_add">Ajouts max / session</label>
+            <input id="hunter_max_add" type="number" min="1" max="100" value="20">
+            <label>
+                <input type="checkbox" id="hunter_auto_connect">
+                Ajouter automatiquement les profils (connexion) après la chasse.
+            </label>
+            <label>
+                <input type="checkbox" id="hunter_consent">
+                J'ai l'autorisation de lancer la chasse automatique.
+            </label>
+            <button id="btn_hunter_start" class="btn-accent">Lancer chasse auto</button>
+            <label for="hunter_url">Importer depuis URL</label>
+            <input id="hunter_url" placeholder="https://www.linkedin.com/search/results/people/">
+            <button id="btn_hunter_import" class="btn-secondary">Importer depuis URL</button>
+            <p class="muted" id="hunter_status">Aucune chasse en cours.</p>
+        </div>
+        <div class="section" id="radar_section_db">
+            <h4>Base de données</h4>
+            <p class="muted">Liste des profils détectés par catégorie.</p>
+            <div id="hunter_categories"></div>
+            <div class="row">
+                <select id="hunter_sort">
+                    <option value="date_desc">Tri: date (récent)</option>
+                    <option value="date_asc">Tri: date (ancien)</option>
+                    <option value="alpha_asc">Tri: A → Z</option>
+                    <option value="alpha_desc">Tri: Z → A</option>
+                </select>
+                <input id="hunter_filter_letter" placeholder="Filtre lettre (ex: A)">
+            </div>
+            <div id="hunter_targets"></div>
+            <button id="btn_hunter_refresh" class="btn-secondary">Rafraîchir</button>
+        </div>
+        <div class="section" id="radar_section_candidates">
+            <h4>Candidates</h4>
+            <div id="hunter_candidates"></div>
+            <button id="btn_hunter_add" class="btn-success">Ajouter aux cibles</button>
+        </div>
+    </div>
     <div id="tab_queue" class="tab">
         <h3>File d'attente</h3>
         <div class="section">
@@ -210,6 +378,7 @@
         </div>
     </div>
   </div>
+  <script src="hunter_queries.js"></script>
   <script src="dashboard.js"></script>
 </body>
 </html>
