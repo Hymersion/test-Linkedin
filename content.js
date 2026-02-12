@@ -30,6 +30,19 @@ if (!window.ghostlyLoaded) {
         return true;
     };
 
+    const robustClick = (el) => {
+        if (!el) return false;
+        try { el.scrollIntoView({ block: 'center', inline: 'center' }); } catch (e) {}
+        const target = el.closest('button, [role="button"], a') || el;
+        try {
+            target.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+            target.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+            target.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+            target.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        } catch (e) {}
+        return forceClick(target);
+    };
+
     const findSubmitButton = (container) => {
         if (!container) return null;
         return container.querySelector('.artdeco-button--primary') ||
@@ -38,13 +51,74 @@ if (!window.ghostlyLoaded) {
                container.querySelector('button[aria-label*="Post"]');
     };
 
-    const findConnectButton = () => {
-        const buttons = Array.from(document.querySelectorAll('button'));
-        const match = buttons.find(btn => {
-            const label = (btn.innerText || btn.getAttribute('aria-label') || "").toLowerCase();
-            return label.includes('se connecter') || label.includes('connect');
-        });
-        return match || null;
+    const getElementLabel = (el) => (el && (el.innerText || el.getAttribute('aria-label') || el.getAttribute('title') || "") || "").toLowerCase().trim();
+
+    const isConnectLabel = (label) => {
+        if (!label) return false;
+        return label.includes('se connecter') ||
+            label.includes('connect') ||
+            label.includes('inviter') ||
+            label.includes('invitation');
+    };
+
+    const isPendingOrConnectedLabel = (label) => {
+        if (!label) return false;
+        return label.includes('en attente') ||
+            label.includes('pending') ||
+            label.includes('message') ||
+            label.includes('messagerie') ||
+            label.includes('suivi') ||
+            label.includes('following') ||
+            label.includes('relation') ||
+            label.includes('connected') ||
+            label.includes('invitation envoyée') ||
+            label.includes('retirer l’invitation') ||
+            label.includes('withdraw invitation');
+    };
+
+    const findConnectButton = (ctx = document) => {
+        const profileMain = ctx.querySelector('main') || ctx;
+
+        const ctaSelectors = [
+            '.pv-top-card-v2-ctas button',
+            '.pv-top-card--list button',
+            'button[aria-label*="Inviter"]',
+            'button[aria-label*="Connect"]',
+            'button[data-control-name*="connect"]'
+        ];
+        for (const selector of ctaSelectors) {
+            const candidates = Array.from(profileMain.querySelectorAll(selector));
+            const match = candidates.find(btn => {
+                const label = getElementLabel(btn);
+                if (!isConnectLabel(label) && !String(btn.getAttribute('data-control-name') || '').toLowerCase().includes('connect')) return false;
+                if (label.includes('déconnecter') || label.includes('disconnect')) return false;
+                if (isPendingOrConnectedLabel(label)) return false;
+                return true;
+            });
+            if (match) return match;
+        }
+
+        const buttons = Array.from(profileMain.querySelectorAll('button'));
+        return buttons.find(btn => {
+            const label = getElementLabel(btn);
+            if (!isConnectLabel(label)) return false;
+            if (label.includes('déconnecter') || label.includes('disconnect')) return false;
+            if (isPendingOrConnectedLabel(label)) return false;
+            return true;
+        }) || null;
+    };
+
+    const findMoreActionsButton = (ctx = document) => {
+        const profileMain = ctx.querySelector('main') || ctx;
+        const buttons = Array.from(profileMain.querySelectorAll('button'));
+        return buttons.find(btn => {
+            const label = getElementLabel(btn);
+            const aria = String(btn.getAttribute('aria-label') || '').toLowerCase();
+            const dataControl = String(btn.getAttribute('data-control-name') || '').toLowerCase();
+            return label.includes('plus') || label.includes('more') || label.includes('autres actions') ||
+                aria.includes('more actions') || aria.includes('autres actions') ||
+                dataControl.includes('overflow') || dataControl.includes('more');
+        }) || null;
     };
 
     const waitForElement = async (selector, ctx = document, attempts = 12, delay = 400) => {
@@ -54,6 +128,109 @@ if (!window.ghostlyLoaded) {
             await new Promise(r => setTimeout(r, delay));
         }
         return null;
+    };
+
+
+    const clickConnectFromOverflow = async () => {
+        const moreBtn = findMoreActionsButton();
+        if (!moreBtn) return false;
+        robustClick(moreBtn);
+        await new Promise(r => setTimeout(r, 500));
+
+        const menuRoot = document.querySelector('.artdeco-dropdown__content-inner, [role="menu"], .artdeco-dropdown__content');
+        const scope = menuRoot || document;
+        const options = Array.from(scope.querySelectorAll('div[role="menuitem"], li[role="menuitem"], button, div[role="button"]'));
+        const connectOption = options.find(el => isConnectLabel(getElementLabel(el)) && !isPendingOrConnectedLabel(getElementLabel(el)));
+        if (!connectOption) return false;
+        robustClick(connectOption.closest('button') || connectOption);
+        return true;
+    };
+
+
+    const hasPendingOrConnectedState = () => {
+        const scope = document.querySelector('main') || document;
+        const buttons = Array.from(scope.querySelectorAll('button'));
+        const hasButtonState = buttons.some(btn => isPendingOrConnectedLabel(getElementLabel(btn)));
+        if (hasButtonState) return true;
+
+        const pageText = (document.body && document.body.innerText ? document.body.innerText : '').toLowerCase();
+        return pageText.includes('invitation envoyée') || pageText.includes('invitation sent');
+    };
+
+    const waitForPendingOrConnectedState = async (attempts = 8, delay = 700) => {
+        for (let i = 0; i < attempts; i++) {
+            if (hasPendingOrConnectedState()) return true;
+            await new Promise(r => setTimeout(r, delay));
+        }
+        return false;
+    };
+
+    const findInvitationErrorText = () => {
+        const candidates = Array.from(document.querySelectorAll('[role="alert"], .artdeco-toast-item, .artdeco-inline-feedback, .artdeco-toast-item__message'));
+        for (const el of candidates) {
+            const txt = getElementLabel(el);
+            if (!txt) continue;
+            if (txt.includes('invitation n’a pas été envoyée') ||
+                txt.includes("invitation n'a pas été envoyée") ||
+                txt.includes('impossible de connecter') ||
+                txt.includes('unable to send invitation') ||
+                txt.includes('please try again') ||
+                txt.includes('merci de recommencer')) {
+                return txt;
+            }
+        }
+
+        const pageText = (document.body && document.body.innerText ? document.body.innerText : '').toLowerCase();
+        if (pageText.includes('invitation n’a pas été envoyée') ||
+            pageText.includes("invitation n'a pas été envoyée") ||
+            pageText.includes('impossible de connecter') ||
+            pageText.includes('unable to send invitation')) {
+            return 'linkedin_error_invitation_not_sent';
+        }
+        return '';
+    };
+
+    const completeInviteModal = async (customMessage) => {
+        await new Promise(r => setTimeout(r, 700));
+        const modal = document.querySelector('[role="dialog"], .artdeco-modal');
+        if (!modal) return { success: true };
+
+        if (customMessage && String(customMessage).trim()) {
+            const addNoteButton = findByText('button', ['ajouter une note', 'add a note'], modal) || findByText('span', ['ajouter une note', 'add a note'], modal);
+            const addNoteClickable = addNoteButton ? (addNoteButton.closest('button') || addNoteButton) : null;
+            if (addNoteClickable) {
+                robustClick(addNoteClickable);
+                const textarea = await waitForElement('textarea#custom-message, textarea[name="message"], textarea', modal, 8, 300);
+                if (textarea) {
+                    textarea.focus();
+                    textarea.value = String(customMessage).trim().slice(0, 280);
+                    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+                    textarea.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+            }
+        }
+
+        const sendButton = findByText('button', ['envoyer', 'send'], modal) || findByText('span', ['envoyer', 'send'], modal);
+        const sendClickable = sendButton ? (sendButton.closest('button') || sendButton) : null;
+        if (sendClickable) {
+            robustClick(sendClickable);
+            await new Promise(r => setTimeout(r, 1200));
+            const inviteError = findInvitationErrorText();
+            if (inviteError) {
+                return { success: false, error: `LinkedIn a refusé l'invitation: ${inviteError}` };
+            }
+            return { success: true };
+        }
+
+        const noNoteButton = findByText('button', ['sans note', 'without a note'], modal) || findByText('span', ['sans note', 'without a note'], modal);
+        const noNoteClickable = noNoteButton ? (noNoteButton.closest('button') || noNoteButton) : null;
+        if (noNoteClickable) {
+            robustClick(noNoteClickable);
+            await new Promise(r => setTimeout(r, 900));
+            return { success: true };
+        }
+
+        return { success: false, error: "Invitation ouverte mais confirmation introuvable." };
     };
 
     const securePaste = async (editor, text) => {
@@ -525,13 +702,66 @@ if (!window.ghostlyLoaded) {
                     sendResponse({ success: false, error: "Veuillez vous connecter à LinkedIn." });
                     return;
                 }
-                const btn = findConnectButton();
-                if (!btn) {
-                    sendResponse({ success: false, error: "Bouton de connexion introuvable." });
+
+                const attemptConnection = async (customMessage) => {
+                    if (hasPendingOrConnectedState()) {
+                        return { success: true, alreadyConnected: true };
+                    }
+
+                    let clicked = false;
+                    for (let attempt = 0; attempt < 2 && !clicked; attempt++) {
+                        const directConnectBtn = findConnectButton();
+                        if (directConnectBtn) {
+                            clicked = robustClick(directConnectBtn);
+                        }
+                        if (!clicked) {
+                            clicked = await clickConnectFromOverflow();
+                        }
+                        if (!clicked && attempt === 0) {
+                            window.scrollBy(0, -300);
+                            await new Promise(r => setTimeout(r, 800));
+                        }
+                    }
+
+                    if (!clicked) {
+                        return { success: false, error: "Bouton de connexion introuvable." };
+                    }
+
+                    const modalResult = await completeInviteModal(customMessage || "");
+                    if (!modalResult.success) {
+                        return modalResult;
+                    }
+
+                    const confirmed = await waitForPendingOrConnectedState(20, 900);
+                    if (!confirmed) {
+                        return { success: false, error: "Invitation non confirmée (état LinkedIn inchangé)." };
+                    }
+
+                    return { success: true };
+                };
+
+                const firstAttempt = await attemptConnection(request.message || "");
+                if (firstAttempt.success) {
+                    sendResponse(firstAttempt);
                     return;
                 }
-                forceClick(btn);
-                sendResponse({ success: true });
+
+                if (request.message) {
+                    await new Promise(r => setTimeout(r, 1600));
+                    const secondAttempt = await attemptConnection("");
+                    if (secondAttempt.success) {
+                        sendResponse({ success: true, fallbackWithoutNote: true, firstError: firstAttempt.error || "" });
+                        return;
+                    }
+                    sendResponse({
+                        success: false,
+                        error: secondAttempt.error || firstAttempt.error || "Connexion non exécutée.",
+                        firstError: firstAttempt.error || ""
+                    });
+                    return;
+                }
+
+                sendResponse(firstAttempt);
             })();
             return true;
         }
